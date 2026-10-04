@@ -3,6 +3,7 @@
 require_once __DIR__ . '/Trakt.php';
 require_once __DIR__ . '/Library.php';
 require_once __DIR__ . '/Posters.php';
+require_once __DIR__ . '/Plex.php';
 require_once __DIR__ . '/Widgets.php';
 require_once __DIR__ . '/WidgetCache.php';
 require_once __DIR__ . '/WidgetRegistry.php';
@@ -27,6 +28,10 @@ class App
         'movies_default_period' => 'this_year',
         'genre_default_period'  => 'all_time',
         'tmdb_api_key'     => '',
+        'plex_url'         => '',
+        'plex_token'       => '',
+        'plex_user'        => '',
+        'plex_server'      => '',
         'library_backfill_pages_per_run' => 20,
         'library_rebuild_days'           => 7,
         'poster_backfill_per_run'        => 40,
@@ -41,6 +46,7 @@ class App
     public Trakt $trakt;
     public Library $library;
     public Posters $posters;
+    public Plex $plex;
     public Widgets $widgets;
     public DateTimeZone $tz;
 
@@ -51,6 +57,7 @@ class App
         $this->trakt = new Trakt($config, (int) $config['cache_ttl']);
         $this->library = new Library($this->trakt, $config['username'] !== '' ? $config['username'] : 'me');
         $this->posters = new Posters($config);
+        $this->plex = new Plex($config);
         $this->widgets = new Widgets($this->trakt, $this->library, $this->posters, $config);
     }
 
@@ -88,15 +95,25 @@ class App
 
     /**
      * The hero card: what's playing right now (or the last thing watched),
-     * plus the thing before it.
+     * plus the thing before it. A direct Plex session wins when Plex is
+     * configured (real position, survives pausing), then a live Trakt
+     * scrobble/check-in, then the most recent history entry.
      *
      * @return array{current: ?array, previous: ?array}
      */
     public function nowWatching(int $ttl): array
     {
-        $watching = $this->trakt->getWatching($ttl);
         $history = $this->trakt->getRecentHistory(3, $ttl);
 
+        $plexSession = $this->plex->currentSession($ttl);
+        if ($plexSession !== null) {
+            return [
+                'current'  => $this->describePlex($plexSession),
+                'previous' => isset($history[0]) ? $this->describe($history[0], false) : null,
+            ];
+        }
+
+        $watching = $this->trakt->getWatching($ttl);
         $current = null;
         $previous = null;
 
@@ -164,6 +181,58 @@ class App
             'started_at' => isset($item['started_at']) ? strtotime($item['started_at']) : null,
             'expires_at' => isset($item['expires_at']) ? strtotime($item['expires_at']) : null,
             'watched_at' => isset($item['watched_at']) ? strtotime($item['watched_at']) : null,
+        ];
+    }
+
+    /**
+     * Normalizes a Plex /status/sessions entry into the same shape as
+     * describe(). Progress comes from Plex's real playback position; the
+     * start/end times are derived from it so the browser can keep the bar
+     * moving between polls (and freeze it when paused).
+     */
+    private function describePlex(array $s): array
+    {
+        $isEpisode = ($s['type'] ?? '') === 'episode';
+        $title = $isEpisode ? (string) ($s['grandparentTitle'] ?? '') : (string) ($s['title'] ?? '');
+        $year = $isEpisode ? null : ($s['year'] ?? null);
+        $durationMs = (int) ($s['duration'] ?? 0);
+        $offsetMs = min($durationMs, (int) ($s['viewOffset'] ?? 0));
+        $paused = ($s['Player']['state'] ?? '') === 'paused';
+        $startedAt = time() - intdiv($offsetMs, 1000);
+
+        // Match against the local Trakt history for a link (and a poster,
+        // if Trakt had one) — by exact title, and year for movies.
+        $key = $this->library->findTitleKey($isEpisode ? 's' : 'm', $title, $isEpisode ? null : ($year !== null ? (int) $year : null));
+        $known = $key !== null ? $this->library->title($key) : null;
+        $url = !empty($known['slug']) ? 'https://trakt.tv/' . ($isEpisode ? 'shows/' : 'movies/') . $known['slug'] : null;
+
+        $subtitle = $isEpisode
+            ? Trakt::episodeCode((int) ($s['parentIndex'] ?? 0), (int) ($s['index'] ?? 0)) . (!empty($s['title']) ? ' · ' . $s['title'] : '')
+            : (string) ($year ?? '');
+
+        $genres = array_map(fn($g) => $g['tag'] ?? '', array_slice((array) ($s['Genre'] ?? []), 0, 3));
+        $runtime = (int) round($durationMs / 60000);
+
+        $poster = Plex::artUrl($isEpisode ? ($s['grandparentThumb'] ?? $s['thumb'] ?? null) : ($s['thumb'] ?? null), 'poster') ?? ($known['p'] ?? null);
+        $backdrop = Plex::artUrl($isEpisode ? ($s['grandparentArt'] ?? $s['art'] ?? null) : ($s['art'] ?? null), 'backdrop') ?? ($known['f'] ?? $poster);
+
+        return [
+            'live'       => true,
+            'source'     => 'plex',
+            'type'       => $isEpisode ? 'episode' : 'movie',
+            'title'      => $title,
+            'subtitle'   => $subtitle,
+            'meta'       => implode(' · ', array_filter([$runtime ? $runtime . ' min' : '', implode(', ', array_filter($genres))])),
+            'image'      => $poster,
+            'backdrop'   => $backdrop,
+            'url'        => $url,
+            'action'     => 'plex',
+            'device'     => $s['Player']['title'] ?? null,
+            'paused'     => $paused,
+            'progress'   => $durationMs > 0 ? $offsetMs / $durationMs : null,
+            'started_at' => $durationMs > 0 ? $startedAt : null,
+            'expires_at' => $durationMs > 0 ? $startedAt + intdiv($durationMs, 1000) : null,
+            'watched_at' => null,
         ];
     }
 

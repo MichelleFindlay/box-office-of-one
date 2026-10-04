@@ -405,6 +405,27 @@ class Library
         return !empty($play[8]);
     }
 
+    /**
+     * Title key ('m123' / 's456') for an exact (case-insensitive) title
+     * match — used to link a Plex session back to its Trakt page. When
+     * several share a name (remakes), $year picks between them.
+     */
+    public function findTitleKey(string $prefix, string $title, ?int $year): ?string
+    {
+        $match = null;
+        foreach ($this->load()['titles'] as $key => $t) {
+            if ($key[0] !== $prefix || strcasecmp($t['t'], $title) !== 0) {
+                continue;
+            }
+            if ($year === null || $t['y'] === $year) {
+                return $key;
+            }
+            $match = $match ?? $key;
+        }
+
+        return $match;
+    }
+
     public function title(string $key): ?array
     {
         return $this->load()['titles'][$key] ?? null;

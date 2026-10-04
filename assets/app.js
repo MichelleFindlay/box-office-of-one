@@ -278,9 +278,11 @@
         return days === 1 ? "yesterday" : days + " days ago";
     }
 
-    // Trakt reports when a live scrobble/check-in started and when it's
-    // expected to end, so the progress bar is just wall-clock interpolation
-    // between the two, ticked every second between polls.
+    // Live items carry when they started and when they're expected to end
+    // (Trakt reports these directly; for a Plex session they're derived from
+    // the real playback position), so the bar is wall-clock interpolation
+    // between the two, ticked every second between polls. A paused Plex
+    // session stays frozen at its reported position instead.
     function updateProgress() {
         if (!els.progress) {
             return;
@@ -290,22 +292,29 @@
             els.progress.style.display = "none";
             return;
         }
-        var now = Date.now() / 1000;
-        var frac = Math.min(1, Math.max(0, (now - item.started_at) / (item.expires_at - item.started_at)));
-        var remaining = Math.max(0, Math.round((item.expires_at - now) / 60));
+        var duration = item.expires_at - item.started_at;
+        var frac = item.paused && item.progress !== null && item.progress !== undefined
+            ? item.progress
+            : (Date.now() / 1000 - item.started_at) / duration;
+        frac = Math.min(1, Math.max(0, frac));
+        var remaining = Math.max(0, Math.round(((1 - frac) * duration) / 60));
         els.progress.style.display = "";
         els.progressFill.style.width = (frac * 100).toFixed(1) + "%";
-        setText(els.progressLabel, Math.round(frac * 100) + "% · " + remaining + " min left");
+        setText(els.progressLabel, Math.round(frac * 100) + "% · " + remaining + " min left" + (item.paused ? " · paused" : ""));
     }
 
     function renderBadge(item) {
         if (!els.badge) {
             return;
         }
-        if (item.live) {
+        if (item.live && item.paused) {
             els.badge.classList.add("live");
-            els.badge.innerHTML = '<span class="eq"><span></span><span></span><span></span></span> ' +
-                (item.action === "checkin" ? "Checked in" : "Now watching");
+            els.badge.textContent = "Paused" + (item.device ? " on " + item.device : "");
+        } else if (item.live) {
+            els.badge.classList.add("live");
+            els.badge.innerHTML = '<span class="eq"><span></span><span></span><span></span></span> ';
+            els.badge.appendChild(document.createTextNode(
+                (item.action === "checkin" ? "Checked in" : "Now watching") + (item.device ? " on " + item.device : "")));
         } else {
             els.badge.classList.remove("live");
             els.badge.textContent = "Last watched" + (item.watched_at ? " · " + timeAgo(item.watched_at) : "");

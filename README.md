@@ -12,8 +12,8 @@ built the same way: plain PHP, no database, flat-file caching.
 ## Features
 
 - **Now Watching**: whatever's playing right now (a live scrobble from
-  Plex/Kodi/Infuse/etc., or a check-in), with a progress bar ticking towards
-  its expected end. Otherwise it shows the last thing you watched, and the
+  Plex/Kodi/Infuse/etc., a check-in, or read straight from your Plex
+  server, see below), with a progress bar. Otherwise it shows the last thing you watched, and the
   item before that sits alongside as "previously watched". Polled every few
   seconds.
 - **Dynamic theming**: the page background and accent colour come from the
@@ -96,6 +96,38 @@ built the same way: plain PHP, no database, flat-file caching.
 On shared/Apache hosting, `.htaccess` and `.user.ini` are included to toggle
 PHP error display between debug and production. See the comments in each
 file.
+
+## Plex "Now Watching" (optional)
+
+Out of the box, "Now Watching" comes from Trakt, so it only shows something
+while a scrobbler reports it live: Trakt's own Plex integration (needs Plex
+Pass), or `plextraktsync watch` running in the background. Note that
+`plextraktsync sync` only copies finished plays after the fact. Trakt also
+drops an item as soon as it's paused.
+
+You can also have the dashboard ask your Plex server directly, through
+Plex's own API. Set `plex_token` in `config.php` and that's it. It then
+shows your real playback position, stays up while paused, and says which
+device you're watching on. It falls back to Trakt whenever nothing is
+playing on Plex or Plex can't be reached.
+
+The server is found automatically through your Plex account
+(`plex.tv/api/v2/resources`, which lists your servers and the addresses
+each one can be reached at). The dashboard tries those addresses in order
+(local network, then remote, then Plex's relay), uses the first that
+answers, remembers it for a day, and finds a new one if it stops working.
+If your account can see more than one server, set `plex_server` to the one
+you want by name. If you'd rather use a fixed address, set `plex_url`.
+
+- Only the server owner's playback is shown, unless you set `plex_user` to
+  someone else's Plex username. That way other people sharing your server
+  don't appear on your dashboard.
+- The token never reaches the browser. Posters and backdrops go through
+  `plex_art.php`, which only accepts Plex library image paths and caches
+  each image for a day.
+- If the dashboard is hosted outside your home network, your Plex server
+  needs Remote Access turned on, or failing that the relay is used, which
+  works but is slower.
 
 ## Private profiles
 

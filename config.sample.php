@@ -52,6 +52,26 @@ return [
     // Get one at https://www.themoviedb.org/settings/api
     'tmdb_api_key' => '',
 
+    // Optional: read "Now Watching" straight from your Plex server instead
+    // of relying on a live Trakt scrobbler — real playback position, stays
+    // up while paused, and shows which device it's on. Falls back to Trakt
+    // whenever nothing's playing on Plex (or Plex can't be reached).
+    //   plex_token:  your X-Plex-Token — the only required setting. See
+    //                https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
+    //                Stays server-side; posters are proxied via plex_art.php.
+    //   plex_server: which server to use, by name, if your account can see
+    //                more than one. Blank = the first server you own.
+    //   plex_user:   whose playback to show, by Plex username. Blank = the
+    //                server owner only, so other people sharing your server
+    //                don't show up on your dashboard.
+    //   plex_url:    optional fixed address, e.g. 'http://192.168.1.10:32400'.
+    //                Blank = found automatically through your Plex account
+    //                (whichever of the server's addresses answers first).
+    'plex_token'  => '',
+    'plex_server' => '',
+    'plex_user'   => '',
+    'plex_url'    => '',
+
     // Local history snapshot (see lib/Library.php). cron.php pulls this many
     // pages of history (100 plays/page) per run while backfilling, so a
     // long history fills in over several runs rather than one huge one.
