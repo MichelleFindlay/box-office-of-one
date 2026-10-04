@@ -1,0 +1,27 @@
+# ------------------------------------------------------------------
+# box-office-of-one — debug / production switch
+#
+# Exactly one mode should be active below. To switch, comment out the
+# active pair of lines and uncomment the other pair (add/remove the
+# leading "#").
+#
+# NOTE: these directives only take effect if PHP runs as an Apache
+# module (mod_php). Many shared hosts (cPanel's MultiPHP Manager,
+# most modern setups) run PHP via FPM or CGI instead, where .htaccess
+# PHP directives are silently ignored — Apache just skips this whole
+# block. If toggling this file has no visible effect, edit .user.ini
+# in this same folder instead (it does the same job for FPM/CGI).
+# ------------------------------------------------------------------
+
+<IfModule mod_php.c>
+    php_value error_reporting E_ALL
+    php_flag log_errors On
+
+    # --- Mode: PRODUCTION (default) — log errors, don't show them ---
+    php_flag display_errors Off
+    php_flag display_startup_errors Off
+
+    # --- Mode: DEBUG — uncomment these two, comment out the two above ---
+    # php_flag display_errors On
+    # php_flag display_startup_errors On
+</IfModule>

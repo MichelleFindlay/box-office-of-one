@@ -1,0 +1,177 @@
+<?php
+
+require_once __DIR__ . '/Trakt.php';
+require_once __DIR__ . '/Library.php';
+require_once __DIR__ . '/Posters.php';
+require_once __DIR__ . '/Widgets.php';
+require_once __DIR__ . '/WidgetCache.php';
+require_once __DIR__ . '/WidgetRegistry.php';
+
+/**
+ * Shared setup for every entry point (index.php, api.php, widgets.php,
+ * cron.php, auth.php, mcp.php): loads config.php with defaults filled in
+ * and wires up the Trakt client, local library, and widgets.
+ */
+class App
+{
+    public const DEFAULTS = [
+        'client_id'        => '',
+        'client_secret'    => '',
+        'username'         => '',
+        'app_name'         => 'Box Office of One',
+        'poll_interval_ms' => 15000,
+        'cache_ttl'        => 60,
+        'top_limit'        => 8,
+        'timezone'         => '',
+        'shows_default_period'  => 'this_year',
+        'movies_default_period' => 'this_year',
+        'genre_default_period'  => 'all_time',
+        'tmdb_api_key'     => '',
+        'library_backfill_pages_per_run' => 20,
+        'library_rebuild_days'           => 7,
+        'poster_backfill_per_run'        => 40,
+        'cron_enabled'     => false,
+        'cron_secret'      => '',
+        'mcp_api_key'      => '',
+        'github_repo'      => '',
+        'update_check_ttl' => 3600,
+    ];
+
+    public array $config;
+    public Trakt $trakt;
+    public Library $library;
+    public Posters $posters;
+    public Widgets $widgets;
+    public DateTimeZone $tz;
+
+    private function __construct(array $config)
+    {
+        $this->config = $config;
+        $this->tz = Trakt::resolveTimezone($config['timezone']);
+        $this->trakt = new Trakt($config, (int) $config['cache_ttl']);
+        $this->library = new Library($this->trakt, $config['username'] !== '' ? $config['username'] : 'me');
+        $this->posters = new Posters($config);
+        $this->widgets = new Widgets($this->trakt, $this->library, $this->posters, $config);
+    }
+
+    /**
+     * @return array|null config with defaults applied, or null if config.php is missing
+     */
+    public static function loadConfig(): ?array
+    {
+        $configFile = __DIR__ . '/../config.php';
+        if (!is_file($configFile)) {
+            return null;
+        }
+
+        $config = require $configFile;
+
+        return is_array($config) ? $config + self::DEFAULTS : null;
+    }
+
+    public static function needsSetup(?array $config): bool
+    {
+        return $config === null
+            || $config['client_id'] === '' || $config['client_id'] === 'YOUR_TRAKT_CLIENT_ID'
+            || $config['username'] === 'YOUR_TRAKT_USERNAME';
+    }
+
+    public static function boot(array $config): self
+    {
+        return new self($config);
+    }
+
+    public function handlers(): array
+    {
+        return WidgetRegistry::handlers($this->trakt, $this->library, $this->widgets, $this->config);
+    }
+
+    /**
+     * The hero card: what's playing right now (or the last thing watched),
+     * plus the thing before it.
+     *
+     * @return array{current: ?array, previous: ?array}
+     */
+    public function nowWatching(int $ttl): array
+    {
+        $watching = $this->trakt->getWatching($ttl);
+        $history = $this->trakt->getRecentHistory(3, $ttl);
+
+        $current = null;
+        $previous = null;
+
+        if ($watching) {
+            $current = $this->describe($watching, true);
+            $previous = isset($history[0]) ? $this->describe($history[0], false) : null;
+        } elseif (isset($history[0])) {
+            $current = $this->describe($history[0], false);
+            $previous = isset($history[1]) ? $this->describe($history[1], false) : null;
+        }
+
+        return ['current' => $current, 'previous' => $previous];
+    }
+
+    /**
+     * Normalizes a /watching or /history item into what the hero card shows.
+     */
+    private function describe(array $item, bool $live): ?array
+    {
+        $type = $item['type'] ?? '';
+        if ($type === 'movie' && isset($item['movie'])) {
+            $media = $item['movie'];
+            $key = 'm' . ($media['ids']['trakt'] ?? '');
+            $title = $media['title'] ?? '';
+            $subtitle = isset($media['year']) ? (string) $media['year'] : '';
+            $runtime = (int) ($media['runtime'] ?? 0);
+            $url = isset($media['ids']['slug']) ? 'https://trakt.tv/movies/' . $media['ids']['slug'] : null;
+            $posterType = 'movie';
+        } elseif ($type === 'episode' && isset($item['show'], $item['episode'])) {
+            $media = $item['show'];
+            $ep = $item['episode'];
+            $key = 's' . ($media['ids']['trakt'] ?? '');
+            $title = $media['title'] ?? '';
+            $code = Trakt::episodeCode((int) ($ep['season'] ?? 0), (int) ($ep['number'] ?? 0));
+            $subtitle = $code . (!empty($ep['title']) ? ' · ' . $ep['title'] : '');
+            $runtime = (int) ($ep['runtime'] ?? 0) ?: (int) ($media['runtime'] ?? 0);
+            $url = isset($media['ids']['slug'])
+                ? 'https://trakt.tv/shows/' . $media['ids']['slug'] . '/seasons/' . (int) ($ep['season'] ?? 0) . '/episodes/' . (int) ($ep['number'] ?? 0)
+                : null;
+            $posterType = 'show';
+        } else {
+            return null;
+        }
+
+        $poster = Trakt::imageUrl($media, 'poster') ?? ($this->library->title($key)['p'] ?? null);
+        $fanart = Trakt::imageUrl($media, 'fanart') ?? ($this->library->title($key)['f'] ?? null);
+        if ($poster === null || $fanart === null) {
+            $tmdb = $this->posters->lookup($posterType, isset($media['ids']['tmdb']) ? (int) $media['ids']['tmdb'] : null);
+            $poster = $poster ?? $tmdb['poster'];
+            $fanart = $fanart ?? $tmdb['fanart'];
+        }
+
+        $genres = array_map([Trakt::class, 'prettyGenre'], array_slice((array) ($media['genres'] ?? []), 0, 3));
+
+        return [
+            'live'       => $live,
+            'type'       => $type,
+            'title'      => $title,
+            'subtitle'   => $subtitle,
+            'meta'       => implode(' · ', array_filter([$runtime ? $runtime . ' min' : '', implode(', ', $genres)])),
+            'image'      => $poster,
+            'backdrop'   => $fanart ?? $poster,
+            'url'        => $url,
+            'action'     => $item['action'] ?? null, // scrobble | checkin | watch
+            'started_at' => isset($item['started_at']) ? strtotime($item['started_at']) : null,
+            'expires_at' => isset($item['expires_at']) ? strtotime($item['expires_at']) : null,
+            'watched_at' => isset($item['watched_at']) ? strtotime($item['watched_at']) : null,
+        ];
+    }
+
+    /**
+     * The page-level stats row, read from Trakt's own lifetime totals.
+     */
+    public function lifetimeStats(): array
+    {
+        return Trakt::formatLifetimeStats($this->trakt->getStats(), $this->trakt->getProfile());
+    }
+}
