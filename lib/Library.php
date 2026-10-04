@@ -563,6 +563,38 @@ class Library
     }
 
     /**
+     * Lifetime totals in the same shape as Trakt's /users/{id}/stats, built
+     * from the local snapshot — for when that endpoint has nothing to give
+     * (it answers an unauthenticated app with an empty 204). "Watched"
+     * counts distinct movies / shows / episodes; minutes count every play,
+     * rewatches included, as Trakt's own totals do.
+     */
+    public function lifetimeTotals(): array
+    {
+        $movies = [];
+        $shows = [];
+        $episodes = [];
+        $movieMinutes = 0;
+        $episodeMinutes = 0;
+        foreach ($this->load()['plays'] as $p) {
+            if ($p[2] === 'm') {
+                $movies[$p[3]] = true;
+                $movieMinutes += $this->playMinutes($p);
+            } else {
+                $shows[$p[3]] = true;
+                $episodes[$p[3] . ':' . $p[4] . ':' . $p[5]] = true;
+                $episodeMinutes += $this->playMinutes($p);
+            }
+        }
+
+        return [
+            'movies'   => ['watched' => count($movies), 'minutes' => $movieMinutes],
+            'shows'    => ['watched' => count($shows)],
+            'episodes' => ['watched' => count($episodes), 'minutes' => $episodeMinutes],
+        ];
+    }
+
+    /**
      * Individual plays as readable records, newest first — for callers (the
      * MCP server) that want date/time-level detail rather than aggregates.
      *

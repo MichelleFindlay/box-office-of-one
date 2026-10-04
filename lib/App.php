@@ -237,10 +237,20 @@ class App
     }
 
     /**
-     * The page-level stats row, read from Trakt's own lifetime totals.
+     * The page-level stats row: Trakt's own lifetime totals when it'll
+     * share them, otherwise the same figures worked out from the local
+     * history snapshot. Trakt's /stats endpoint returns an empty 204 to an
+     * app that isn't signed in, even for a public profile.
      */
     public function lifetimeStats(): array
     {
-        return Trakt::formatLifetimeStats($this->trakt->getStats(), $this->trakt->getProfile());
+        $stats = $this->trakt->getStats();
+
+        if ($stats === null && $this->library->exists()) {
+            $stats = $this->library->lifetimeTotals()
+                + ['ratings' => ['total' => (int) $this->trakt->getRatingsCount()]];
+        }
+
+        return Trakt::formatLifetimeStats($stats, $this->trakt->getProfile());
     }
 }

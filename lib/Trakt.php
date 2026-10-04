@@ -426,6 +426,17 @@ class Trakt
         return $this->allPages('/users/' . $this->userSlug() . '/ratings', ['extended' => 'full'], 3600);
     }
 
+    /**
+     * Number of ratings you've given, from the pagination total of a
+     * one-item request rather than downloading them all.
+     */
+    public function getRatingsCount(): ?int
+    {
+        $result = $this->callWithMeta('/users/' . $this->userSlug() . '/ratings', ['page' => 1, 'limit' => 1], 3600);
+
+        return $result !== null ? $result['item_count'] : null;
+    }
+
     public function getWatchlist(): array
     {
         return $this->allPages('/users/' . $this->userSlug() . '/watchlist', ['extended' => 'full,images'], 3600);
