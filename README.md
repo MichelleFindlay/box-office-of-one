@@ -28,6 +28,12 @@ built the same way: plain PHP, no database, flat-file caching.
   tiebreaker. For films you haven't rated, the community score stands in
   for your rating. Genres are weighted by minutes watched, so one film
   doesn't count the same as a 60-episode binge.
+- **Poster hover cards**: rest the mouse on any poster for an info card.
+  For a show it has the network, status, synopsis, your progress, the last
+  episode you watched, and when the next one airs. For a film it has the
+  tagline, certification, runtime, release date, director, synopsis, and
+  how often and when you watched it. Both include your rating and the
+  score chips. Details load on first hover and are cached.
 - **Lifetime Stats**: movies, shows, episodes, time spent on each, total
   days, ratings given, and how far back your history goes. These come from
   Trakt's own totals when it shares them. Otherwise they're worked out from

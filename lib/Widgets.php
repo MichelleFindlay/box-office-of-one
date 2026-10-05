@@ -217,57 +217,123 @@ class Widgets
     }
 
     /**
-     * Everything the hover card shows for a TV show: Trakt's summary
-     * (network, status, synopsis...), your progress and last-watched
-     * episode from the local history, and the next episode due to air.
-     * Only shows already in your history are looked up, so this can't be
-     * used to proxy arbitrary Trakt requests.
+     * Everything the hover card shows for a show or film: Trakt's summary
+     * (network/status or tagline/director, synopsis...), score chips, and
+     * your own history with it from the local snapshot — plus, for a show,
+     * progress and the next episode due to air.
+     *
+     * Only titles in your history or on your watchlist are looked up, so
+     * this can't be used to proxy arbitrary Trakt requests.
+     *
+     * @return array{title: string, year: ?int, tagline: string, overview: string, facts: string[], genres: string[], chips: array, rows: array<int, array{label: string, value: string}>, url: ?string}|null
      */
-    public function showInfo(string $key): ?array
+    public function titleInfo(string $key): ?array
     {
-        $local = $this->library->title($key);
-        if ($key[0] !== 's' || $local === null) {
+        if (!preg_match('/^[ms]\d+$/', $key)) {
             return null;
         }
 
+        $isShow = $key[0] === 's';
         $id = substr($key, 1);
-        $show = $this->trakt->call('/shows/' . $id, ['extended' => 'full'], 86400);
-        $show = is_array($show) ? $show : [];
-        // 204 (nothing scheduled) caches as null like any other response.
-        $next = $this->trakt->call('/shows/' . $id . '/next_episode', ['extended' => 'full'], 21600);
+        $local = $this->library->title($key);
+        if ($local === null && !$this->onWatchlist($key)) {
+            return null;
+        }
 
-        $statuses = ['returning series' => 'Returning series', 'continuing' => 'Returning series', 'ended' => 'Ended',
-            'canceled' => 'Cancelled', 'in production' => 'In production', 'planned' => 'Planned', 'pilot' => 'Pilot', 'upcoming' => 'Upcoming'];
-        $status = $statuses[strtolower((string) ($show['status'] ?? ''))] ?? null;
+        $media = $this->trakt->call(($isShow ? '/shows/' : '/movies/') . $id, ['extended' => 'full'], 86400);
+        $media = is_array($media) ? $media : [];
+        if ($local === null && $media === []) {
+            return null;
+        }
 
-        $last = $this->library->lastPlay($key);
+        $rows = [];
+        $mine = $this->myRating($key);
+        if ($mine !== null) {
+            $rows[] = ['label' => 'Your rating', 'value' => '★ ' . $mine . '/10'];
+        }
+
+        if ($isShow) {
+            $statuses = ['returning series' => 'Returning series', 'continuing' => 'Returning series', 'ended' => 'Ended',
+                'canceled' => 'Cancelled', 'in production' => 'In production', 'planned' => 'Planned', 'pilot' => 'Pilot', 'upcoming' => 'Upcoming'];
+            $facts = [
+                $media['network'] ?? null,
+                $statuses[strtolower((string) ($media['status'] ?? ''))] ?? null,
+                $media['certification'] ?? null,
+                !empty($media['runtime']) ? $media['runtime'] . ' min' : null,
+                isset($media['country']) ? strtoupper($media['country']) : null,
+            ];
+
+            $progress = $this->library->showProgress($key);
+            if ($progress !== null) {
+                $rows[] = ['label' => 'Progress', 'value' => number_format($progress['watched']) . ' of ' . number_format($progress['aired']) . ' episodes (' . $progress['pct'] . '%)'];
+            }
+            $last = $this->library->lastPlay($key);
+            if ($last !== null) {
+                $rows[] = ['label' => 'Last watched', 'value' => Trakt::episodeCode($last[4], $last[5])
+                    . ($last[7] !== '' ? ' · ' . $last[7] : '') . ' — ' . $this->localTime($last[1])->format('j M Y')];
+            }
+            // 204 (nothing scheduled) caches as null like any other response.
+            $next = $this->trakt->call('/shows/' . $id . '/next_episode', ['extended' => 'full'], 21600);
+            if (is_array($next) && isset($next['season'])) {
+                $rows[] = ['label' => 'Next episode', 'value' => Trakt::episodeCode((int) $next['season'], (int) ($next['number'] ?? 0))
+                    . (!empty($next['title']) ? ' · ' . $next['title'] : '')
+                    . (!empty($next['first_aired']) ? ' — ' . $this->localTime((int) strtotime($next['first_aired']))->format('D j M Y') : '')];
+            }
+        } else {
+            $released = !empty($media['released']) ? date('j M Y', (int) strtotime($media['released'])) : null;
+            $facts = [
+                $media['certification'] ?? null,
+                !empty($media['runtime']) ? Trakt::formatMinutes((int) $media['runtime']) : null,
+                $released ? 'Released ' . $released : null,
+                isset($media['country']) ? strtoupper($media['country']) : null,
+            ];
+
+            $directors = [];
+            $people = $this->trakt->call('/movies/' . $id . '/people', [], 604800);
+            foreach ((array) ($people['crew']['directing'] ?? []) as $c) {
+                if (in_array('Director', (array) ($c['jobs'] ?? [$c['job'] ?? '']), true) && !empty($c['person']['name'])) {
+                    $directors[] = $c['person']['name'];
+                }
+            }
+            if ($directors) {
+                $rows[] = ['label' => count($directors) > 1 ? 'Directors' : 'Director', 'value' => implode(', ', array_slice(array_unique($directors), 0, 3))];
+            }
+
+            $plays = array_filter($this->library->storedPlays(), fn($p) => $p[3] === $key);
+            if ($plays) {
+                $last = $this->library->lastPlay($key);
+                $times = count($plays) === 1 ? 'Once' : count($plays) . ' times';
+                $rows[] = ['label' => 'You watched', 'value' => $times . ($last !== null ? ' — last ' . $this->localTime($last[1])->format('j M Y') : '')];
+            } else {
+                $rows[] = ['label' => 'You watched', 'value' => 'Not yet — it\'s on your watchlist'];
+            }
+        }
+
+        $slug = $local['slug'] ?? ($media['ids']['slug'] ?? null);
 
         return [
-            'title'         => $show['title'] ?? $local['t'],
-            'year'          => $show['year'] ?? $local['y'],
-            'overview'      => (string) ($show['overview'] ?? ''),
-            'facts'         => array_values(array_filter([
-                $show['network'] ?? null,
-                $status,
-                $show['certification'] ?? null,
-                !empty($show['runtime']) ? $show['runtime'] . ' min' : null,
-                isset($show['country']) ? strtoupper($show['country']) : null,
-            ])),
-            'genres'        => array_map([Trakt::class, 'prettyGenre'], array_slice((array) ($show['genres'] ?? $local['g'] ?? []), 0, 4)),
-            'progress'      => $this->library->showProgress($key),
-            'last_watched'  => $last ? [
-                'code'  => Trakt::episodeCode($last[4], $last[5]),
-                'title' => $last[7],
-                'date'  => $this->localTime($last[1])->format('j M Y'),
-            ] : null,
-            'next_episode'  => is_array($next) && isset($next['season']) ? [
-                'code'  => Trakt::episodeCode((int) $next['season'], (int) ($next['number'] ?? 0)),
-                'title' => (string) ($next['title'] ?? ''),
-                'date'  => !empty($next['first_aired']) ? $this->localTime((int) strtotime($next['first_aired']))->format('D j M Y') : null,
-            ] : null,
-            'chips'         => $this->ratingChips($key),
-            'url'           => !empty($local['slug']) ? 'https://trakt.tv/shows/' . $local['slug'] : null,
+            'title'    => (string) ($media['title'] ?? $local['t'] ?? ''),
+            'year'     => $media['year'] ?? $local['y'] ?? null,
+            'tagline'  => (string) ($media['tagline'] ?? ''),
+            'overview' => (string) ($media['overview'] ?? ''),
+            'facts'    => array_values(array_filter($facts)),
+            'genres'   => array_map([Trakt::class, 'prettyGenre'], array_slice((array) ($media['genres'] ?? $local['g'] ?? []), 0, 4)),
+            'chips'    => $this->titleChips($key, Library::traktPercent($media)),
+            'rows'     => $rows,
+            'url'      => $slug ? 'https://trakt.tv/' . ($isShow ? 'shows/' : 'movies/') . $slug : null,
         ];
+    }
+
+    private function onWatchlist(string $key): bool
+    {
+        foreach ($this->trakt->getWatchlist() as $item) {
+            $type = $item['type'] ?? '';
+            if (($type === 'movie' || $type === 'show') && ($type === 'movie' ? 'm' : 's') . ($item[$type]['ids']['trakt'] ?? '') === $key) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // --- Widgets ---------------------------------------------------------
@@ -640,6 +706,7 @@ class Widgets
             $poster = Trakt::imageUrl($m, 'poster')
                 ?? $this->posters->lookup('movie', $m['ids']['tmdb'] ?? null)['poster'];
             $pick = [
+                'key'      => isset($m['ids']['trakt']) ? 'm' . $m['ids']['trakt'] : null,
                 'ratings'  => $this->ratingChips(isset($m['ids']['trakt']) ? 'm' . $m['ids']['trakt'] : null, Library::traktPercent($m), true),
                 'title'    => $m['title'] ?? '?',
                 'year'     => $m['year'] ?? null,

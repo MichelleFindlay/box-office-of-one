@@ -240,7 +240,7 @@ class App
         return [
             'live'       => $live,
             'type'       => $type,
-            'info_key'   => $key !== null && preg_match('/^s\d+$/', $key) ? $key : null, // show hover card
+            'info_key'   => $key !== null && preg_match('/^[ms]\d+$/', $key) ? $key : null, // poster hover card
             'title'      => $title,
             'subtitle'   => $subtitle,
             'meta'       => implode(' · ', array_filter([$runtime ? $runtime . ' min' : '', implode(', ', $genres)])),
@@ -292,7 +292,7 @@ class App
             'live'       => $live,
             'source'     => 'plex',
             'type'       => $isEpisode ? 'episode' : 'movie',
-            'info_key'   => $key !== null && preg_match('/^s\d+$/', $key) ? $key : null, // show hover card
+            'info_key'   => $key !== null && preg_match('/^[ms]\d+$/', $key) ? $key : null, // poster hover card
             'title'      => $title,
             'subtitle'   => $subtitle,
             'meta'       => implode(' · ', array_filter([$runtime ? $runtime . ' min' : '', implode(', ', array_filter($genres))])),

@@ -8,6 +8,7 @@
     var currentItem = window.INITIAL_ITEM || null;
 
     var els = {
+        artTile: document.querySelector("[data-art-tile]"),
         artImg: document.querySelector("[data-art-img]"),
         artFallback: document.querySelector("[data-art-fallback]"),
         name: document.querySelector("[data-track-name]"),
@@ -23,6 +24,7 @@
         progressFill: document.querySelector("[data-watch-progress-fill]"),
         progressLabel: document.querySelector("[data-watch-progress-label]"),
         prevWrap: document.querySelector("[data-prev-track]"),
+        prevThumb: document.querySelector("[data-prev-thumb]"),
         prevArtImg: document.querySelector("[data-prev-art-img]"),
         prevArtFallback: document.querySelector("[data-prev-art-fallback]"),
         prevName: document.querySelector("[data-prev-track-name]"),
@@ -339,7 +341,7 @@
         currentItem = item;
 
         setText(els.name, item.title);
-        setInfoKey(els.name, item.info_key);
+        setInfoKey(els.artTile, item.info_key);
         setText(els.subtitle, item.subtitle);
         setText(els.meta, item.meta);
         if (els.heroRatings) {
@@ -381,7 +383,7 @@
 
         els.prevWrap.style.display = "";
         setText(els.prevName, prev.title);
-        setInfoKey(els.prevWrap, prev.info_key);
+        setInfoKey(els.prevThumb, prev.info_key);
         setText(els.prevSubtitle, prev.subtitle);
         if (els.prevRatings) {
             els.prevRatings.innerHTML = "";
@@ -651,8 +653,11 @@
         return wrap;
     }
 
-    function posterThumb(url, name) {
+    // key: 'm<trakt id>' / 's<trakt id>' — hovering the poster then shows
+    // that film's or show's info card.
+    function posterThumb(url, name, key) {
         var thumb = el("span", "thumb thumb-poster");
+        if (/^[ms]\d+$/.test(key || "")) thumb.setAttribute("data-info-key", key);
         var initial = (name || "?").charAt(0).toUpperCase();
         if (url) {
             var img = document.createElement("img");
@@ -678,9 +683,8 @@
         var ol = el("ol", "track-list");
         data.sessions.forEach(function (s, i) {
             var li = el("li", "track-row");
-            if (s.key) li.setAttribute("data-info-key", s.key);
             li.appendChild(el("span", "rank", String(i + 1)));
-            li.appendChild(posterThumb(s.poster, s.show));
+            li.appendChild(posterThumb(s.poster, s.show, s.key));
             var meta = el("span", "meta");
             meta.appendChild(el("div", "name", s.show));
             meta.appendChild(el("div", "artist", s.range + " · " + s.date));
@@ -785,7 +789,7 @@
             var p = data.pick;
             modalBody.appendChild(el("div", "widget-section-label", "Tonight's pick"));
             var card = el("div", "pick-card");
-            card.appendChild(posterThumb(p.poster, p.title));
+            card.appendChild(posterThumb(p.poster, p.title, p.key));
             var info = el("div", "pick-info");
             var name = p.url ? el("a", "pick-title", p.title) : el("div", "pick-title", p.title);
             if (p.url) {
@@ -888,9 +892,8 @@
         var ol = el("ol", "track-list");
         data.titles.forEach(function (t) {
             var li = el("li", "track-row");
-            if (/^s\d+$/.test(t.key || "")) li.setAttribute("data-info-key", t.key);
             li.appendChild(el("span", "rank", String(t.rank)));
-            li.appendChild(posterThumb(t.art, t.name));
+            li.appendChild(posterThumb(t.art, t.name, t.key));
 
             var meta = el("span", "meta");
             var name = el("div", "name");
@@ -997,11 +1000,12 @@
         }
     });
 
-    // --- TV show hover card ---
-    // Anything carrying data-info-key="s<trakt id>" (Top Shows rows, the
-    // Now Watching / Previously watched cards, Binge Report rows) shows a
-    // card about that show after a short hover. Fetched once per show per
-    // visit from info.php; mouse-only, since touch has no hover.
+    // --- Poster hover card ---
+    // Any poster carrying data-info-key ('s<trakt id>' for a show,
+    // 'm<trakt id>' for a film) — in Top Shows / Top Movies, the Now
+    // Watching and Previously watched cards, Binge Report rows and the
+    // watchlist pick — shows an info card after a short hover. Fetched once
+    // per title per visit from details.php; mouse-only, since touch has no hover.
 
     var infoCache = {};
     var infoCard = null;
@@ -1010,9 +1014,11 @@
 
     function buildInfoCard(info) {
         var card = el("div", "info-card");
-        var head = el("div", "info-card-title", info.title + (info.year ? " (" + info.year + ")" : ""));
-        card.appendChild(head);
+        card.appendChild(el("div", "info-card-title", info.title + (info.year ? " (" + info.year + ")" : "")));
 
+        if (info.tagline) {
+            card.appendChild(el("div", "info-card-tagline", info.tagline));
+        }
         if (info.facts && info.facts.length) {
             card.appendChild(el("div", "info-card-facts", info.facts.join(" · ")));
         }
@@ -1025,24 +1031,14 @@
             card.appendChild(el("p", "info-card-overview", info.overview));
         }
 
-        var rows = el("dl", "info-card-rows");
-        function row(label, value) {
-            if (!value) return;
-            rows.appendChild(el("dt", null, label));
-            rows.appendChild(el("dd", null, value));
+        if (info.rows && info.rows.length) {
+            var rows = el("dl", "info-card-rows");
+            info.rows.forEach(function (r) {
+                rows.appendChild(el("dt", null, r.label));
+                rows.appendChild(el("dd", null, r.value));
+            });
+            card.appendChild(rows);
         }
-        if (info.progress) {
-            row("Progress", fmt(info.progress.watched) + " of " + fmt(info.progress.aired) + " episodes (" + info.progress.pct + "%)");
-        }
-        if (info.last_watched) {
-            var lw = info.last_watched;
-            row("Last watched", lw.code + (lw.title ? " · " + lw.title : "") + " — " + lw.date);
-        }
-        if (info.next_episode) {
-            var ne = info.next_episode;
-            row("Next episode", ne.code + (ne.title ? " · " + ne.title : "") + (ne.date ? " — " + ne.date : ""));
-        }
-        if (rows.childNodes.length) card.appendChild(rows);
 
         return card;
     }
@@ -1082,7 +1078,7 @@
             showInfoCard(target, infoCache[key]);
             return;
         }
-        fetch("info.php?key=" + encodeURIComponent(key), { cache: "no-store" })
+        fetch("details.php?key=" + encodeURIComponent(key), { cache: "no-store" })
             .then(function (res) { return res.json(); })
             .then(function (payload) {
                 if (payload && payload.ok) {

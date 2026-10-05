@@ -1243,11 +1243,11 @@ a.pick-title:hover {
     color: #6fd07c;
 }
 
-/* --- TV show hover card --- */
+/* --- Poster hover card (shows and films) --- */
 
 .info-card {
     position: absolute;
-    z-index: 50;
+    z-index: 60; /* above the widget modal (50), whose Binge Report rows have posters too */
     width: 340px;
     max-width: calc(100vw - 24px);
     background: #14141a;
@@ -1270,6 +1270,12 @@ a.pick-title:hover {
 .info-card-title {
     font-weight: 700;
     font-size: 0.95rem;
+}
+
+.info-card-tagline {
+    margin-top: 2px;
+    font-style: italic;
+    color: var(--fg-dim);
 }
 
 .info-card-facts,
