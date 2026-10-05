@@ -62,7 +62,10 @@ class WidgetRegistry
     public static function titleRows(Library $library, Widgets $widgets, string $panel, string $period, int $limit, DateTimeZone $tz): ?array
     {
         $type = $panel === 'movies' ? 'm' : 'e';
-        $top = $library->topTitles($type, Library::periodStart($period, $tz), $limit);
+        $since = Library::periodStart($period, $tz);
+        // Shows rank by episodes watched; movies by your rating, then
+        // community score (see Widgets::topMovies()), with no play count shown.
+        $top = $type === 'm' ? $widgets->topMovies($since, $limit) : $library->topTitles($type, $since, $limit);
         if ($top === null) {
             return null;
         }
@@ -70,15 +73,23 @@ class WidgetRegistry
         $max = max(1, ...array_map(fn($t) => $t['plays'], $top ?: [['plays' => 1]]));
         $rows = [];
         foreach ($top as $i => $t) {
-            $unit = $type === 'm' ? ($t['plays'] === 1 ? 'play' : 'plays') : ($t['plays'] === 1 ? 'episode' : 'episodes');
+            if ($type === 'm') {
+                $count = $t['mine'] !== null ? '★ ' . $t['mine'] . '/10' : '';
+                $pct = null; // no play-count bar for movies
+            } else {
+                $count = number_format($t['plays']) . ' ' . ($t['plays'] === 1 ? 'episode' : 'episodes');
+                $pct = max(4, (int) round($t['plays'] / $max * 100));
+            }
             $rows[] = [
-                'rank'   => $i + 1,
-                'name'   => $t['title'],
-                'sub'    => trim(($t['year'] ? $t['year'] . ' · ' : '') . Trakt::formatMinutes($t['minutes'])),
-                'count'  => number_format($t['plays']) . ' ' . $unit,
-                'pct'    => max(4, (int) round($t['plays'] / $max * 100)),
-                'art'    => $widgets->posterFor($t['key']),
-                'url'    => $t['slug'] ? 'https://trakt.tv/' . ($type === 'm' ? 'movies' : 'shows') . '/' . $t['slug'] : null,
+                'key'     => $t['key'],
+                'rank'    => $i + 1,
+                'name'    => $t['title'],
+                'sub'     => trim(($t['year'] ? $t['year'] . ' · ' : '') . Trakt::formatMinutes($t['minutes'])),
+                'count'   => $count,
+                'pct'     => $pct,
+                'art'     => $widgets->posterFor($t['key']),
+                'ratings' => $widgets->titleChips($t['key']),
+                'url'     => $t['slug'] ? 'https://trakt.tv/' . ($type === 'm' ? 'movies' : 'shows') . '/' . $t['slug'] : null,
             ];
         }
 

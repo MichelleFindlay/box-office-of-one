@@ -13,6 +13,7 @@
         name: document.querySelector("[data-track-name]"),
         subtitle: document.querySelector("[data-track-artist]"),
         meta: document.querySelector("[data-track-album]"),
+        heroRatings: document.querySelector("[data-hero-ratings]"),
         badge: document.querySelector("[data-status-badge]"),
         updated: document.querySelector("[data-updated]"),
         bgA: document.querySelector("[data-bg-a]"),
@@ -26,6 +27,7 @@
         prevArtFallback: document.querySelector("[data-prev-art-fallback]"),
         prevName: document.querySelector("[data-prev-track-name]"),
         prevSubtitle: document.querySelector("[data-prev-track-artist]"),
+        prevRatings: document.querySelector("[data-prev-ratings]"),
     };
 
     function setText(el, value) {
@@ -270,6 +272,15 @@
         root.setProperty("--accent-soft", "rgba(" + r + ", " + g + ", " + b + ", 0.35)");
     }
 
+    function setInfoKey(node, key) {
+        if (!node) return;
+        if (key) {
+            node.setAttribute("data-info-key", key);
+        } else {
+            node.removeAttribute("data-info-key");
+        }
+    }
+
     function timeAgo(unix) {
         var secs = Math.max(0, Math.round(Date.now() / 1000 - unix));
         if (secs < 3600) return Math.max(1, Math.round(secs / 60)) + " min ago";
@@ -309,12 +320,12 @@
         }
         if (item.live && item.paused) {
             els.badge.classList.add("live");
-            els.badge.textContent = "Paused" + (item.device ? " on " + item.device : "");
+            els.badge.textContent = "Paused";
         } else if (item.live) {
             els.badge.classList.add("live");
             els.badge.innerHTML = '<span class="eq"><span></span><span></span><span></span></span> ';
             els.badge.appendChild(document.createTextNode(
-                (item.action === "checkin" ? "Checked in" : "Now watching") + (item.device ? " on " + item.device : "")));
+                item.action === "checkin" ? "Checked in" : "Now watching"));
         } else {
             els.badge.classList.remove("live");
             els.badge.textContent = "Last watched" + (item.watched_at ? " · " + timeAgo(item.watched_at) : "");
@@ -328,8 +339,14 @@
         currentItem = item;
 
         setText(els.name, item.title);
+        setInfoKey(els.name, item.info_key);
         setText(els.subtitle, item.subtitle);
         setText(els.meta, item.meta);
+        if (els.heroRatings) {
+            els.heroRatings.innerHTML = "";
+            var chips = ratingChips(item.ratings);
+            if (chips) els.heroRatings.appendChild(chips);
+        }
 
         if (els.artFallback) els.artFallback.textContent = (item.title || "?").charAt(0).toUpperCase();
         setArt(els.artImg, els.artFallback, item.image);
@@ -364,7 +381,13 @@
 
         els.prevWrap.style.display = "";
         setText(els.prevName, prev.title);
+        setInfoKey(els.prevWrap, prev.info_key);
         setText(els.prevSubtitle, prev.subtitle);
+        if (els.prevRatings) {
+            els.prevRatings.innerHTML = "";
+            var chips = ratingChips(prev.ratings);
+            if (chips) els.prevRatings.appendChild(chips);
+        }
         if (els.prevArtFallback) els.prevArtFallback.textContent = (prev.title || "?").charAt(0).toUpperCase();
         setArt(els.prevArtImg, els.prevArtFallback, prev.image);
     }
@@ -612,6 +635,22 @@
         modalBody.appendChild(el("div", "widget-subtext", "Bars show how far into the next one you are. " + (data.source_note || "")));
     }
 
+    // Same markup as renderRatingChips() in index.php.
+    function ratingChips(chips) {
+        if (!chips || !chips.length) {
+            return null;
+        }
+        var wrap = el("span", "rating-chips");
+        chips.forEach(function (c) {
+            var chip = el("span", "rating-chip rating-" + c.kind);
+            chip.title = c.title;
+            chip.appendChild(el("span", "rating-label", c.label));
+            chip.appendChild(document.createTextNode(" " + c.value));
+            wrap.appendChild(chip);
+        });
+        return wrap;
+    }
+
     function posterThumb(url, name) {
         var thumb = el("span", "thumb thumb-poster");
         var initial = (name || "?").charAt(0).toUpperCase();
@@ -639,11 +678,14 @@
         var ol = el("ol", "track-list");
         data.sessions.forEach(function (s, i) {
             var li = el("li", "track-row");
+            if (s.key) li.setAttribute("data-info-key", s.key);
             li.appendChild(el("span", "rank", String(i + 1)));
             li.appendChild(posterThumb(s.poster, s.show));
             var meta = el("span", "meta");
             meta.appendChild(el("div", "name", s.show));
             meta.appendChild(el("div", "artist", s.range + " · " + s.date));
+            var chips = ratingChips(s.ratings);
+            if (chips) meta.appendChild(chips);
             li.appendChild(meta);
             li.appendChild(el("span", "count", s.episodes + " eps · " + s.hours + "h"));
             ol.appendChild(li);
@@ -753,6 +795,8 @@
             }
             info.appendChild(name);
             info.appendChild(el("div", "pick-meta", [p.year, p.runtime ? p.runtime + " min" : ""].filter(Boolean).join(" · ")));
+            var pickChips = ratingChips(p.ratings);
+            if (pickChips) info.appendChild(pickChips);
             if (p.overview) {
                 info.appendChild(el("div", "pick-overview", p.overview));
             }
@@ -844,6 +888,7 @@
         var ol = el("ol", "track-list");
         data.titles.forEach(function (t) {
             var li = el("li", "track-row");
+            if (/^s\d+$/.test(t.key || "")) li.setAttribute("data-info-key", t.key);
             li.appendChild(el("span", "rank", String(t.rank)));
             li.appendChild(posterThumb(t.art, t.name));
 
@@ -860,14 +905,18 @@
             }
             meta.appendChild(name);
             meta.appendChild(el("div", "artist", t.sub));
+            var chips = ratingChips(t.ratings);
+            if (chips) meta.appendChild(chips);
             li.appendChild(meta);
 
             var count = el("span", "count", t.count);
-            var bar = el("div", "bar");
-            var fill = el("div", "bar-fill");
-            fill.style.width = t.pct + "%";
-            bar.appendChild(fill);
-            count.appendChild(bar);
+            if (t.pct !== null && t.pct !== undefined) {
+                var bar = el("div", "bar");
+                var fill = el("div", "bar-fill");
+                fill.style.width = t.pct + "%";
+                bar.appendChild(fill);
+                count.appendChild(bar);
+            }
             li.appendChild(count);
 
             ol.appendChild(li);
@@ -947,4 +996,117 @@
             closeModal();
         }
     });
+
+    // --- TV show hover card ---
+    // Anything carrying data-info-key="s<trakt id>" (Top Shows rows, the
+    // Now Watching / Previously watched cards, Binge Report rows) shows a
+    // card about that show after a short hover. Fetched once per show per
+    // visit from info.php; mouse-only, since touch has no hover.
+
+    var infoCache = {};
+    var infoCard = null;
+    var infoTimer = null;
+    var infoTarget = null;
+
+    function buildInfoCard(info) {
+        var card = el("div", "info-card");
+        var head = el("div", "info-card-title", info.title + (info.year ? " (" + info.year + ")" : ""));
+        card.appendChild(head);
+
+        if (info.facts && info.facts.length) {
+            card.appendChild(el("div", "info-card-facts", info.facts.join(" · ")));
+        }
+        var chips = ratingChips(info.chips);
+        if (chips) card.appendChild(chips);
+        if (info.genres && info.genres.length) {
+            card.appendChild(el("div", "info-card-genres", info.genres.join(", ")));
+        }
+        if (info.overview) {
+            card.appendChild(el("p", "info-card-overview", info.overview));
+        }
+
+        var rows = el("dl", "info-card-rows");
+        function row(label, value) {
+            if (!value) return;
+            rows.appendChild(el("dt", null, label));
+            rows.appendChild(el("dd", null, value));
+        }
+        if (info.progress) {
+            row("Progress", fmt(info.progress.watched) + " of " + fmt(info.progress.aired) + " episodes (" + info.progress.pct + "%)");
+        }
+        if (info.last_watched) {
+            var lw = info.last_watched;
+            row("Last watched", lw.code + (lw.title ? " · " + lw.title : "") + " — " + lw.date);
+        }
+        if (info.next_episode) {
+            var ne = info.next_episode;
+            row("Next episode", ne.code + (ne.title ? " · " + ne.title : "") + (ne.date ? " — " + ne.date : ""));
+        }
+        if (rows.childNodes.length) card.appendChild(rows);
+
+        return card;
+    }
+
+    function positionInfoCard(target) {
+        var rect = target.getBoundingClientRect();
+        var cardRect = infoCard.getBoundingClientRect();
+        var margin = 12;
+        var left = Math.min(window.innerWidth - cardRect.width - margin, Math.max(margin, rect.left));
+        var top = rect.bottom + 8;
+        if (top + cardRect.height > window.innerHeight - margin) {
+            top = Math.max(margin, rect.top - cardRect.height - 8); // flip above if no room below
+        }
+        infoCard.style.left = (left + window.scrollX) + "px";
+        infoCard.style.top = (top + window.scrollY) + "px";
+    }
+
+    function showInfoCard(target, info) {
+        hideInfoCard();
+        if (infoTarget !== target) return; // mouse moved on while loading
+        infoCard = buildInfoCard(info);
+        document.body.appendChild(infoCard);
+        positionInfoCard(target);
+        infoCard.classList.add("visible");
+    }
+
+    function hideInfoCard() {
+        if (infoCard) {
+            infoCard.remove();
+            infoCard = null;
+        }
+    }
+
+    function loadInfo(target) {
+        var key = target.getAttribute("data-info-key");
+        if (infoCache[key]) {
+            showInfoCard(target, infoCache[key]);
+            return;
+        }
+        fetch("info.php?key=" + encodeURIComponent(key), { cache: "no-store" })
+            .then(function (res) { return res.json(); })
+            .then(function (payload) {
+                if (payload && payload.ok) {
+                    infoCache[key] = payload.info;
+                    showInfoCard(target, payload.info);
+                }
+            })
+            .catch(function () { /* no card this time */ });
+    }
+
+    document.addEventListener("mouseover", function (evt) {
+        var target = evt.target.closest && evt.target.closest("[data-info-key]");
+        if (target === infoTarget) return;
+        infoTarget = target;
+        clearTimeout(infoTimer);
+        hideInfoCard();
+        if (target) {
+            infoTimer = setTimeout(function () { loadInfo(target); }, 350);
+        }
+    });
+
+    document.addEventListener("scroll", function () {
+        clearTimeout(infoTimer);
+        infoTarget = null;
+        hideInfoCard();
+    }, { passive: true });
 })();

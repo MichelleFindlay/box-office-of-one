@@ -12,7 +12,8 @@
  *   3. Advances the periodic background rebuild, if one is due (see
  *      library_rebuild_days in config.php).
  *   4. Fills in a bounded batch of missing posters from TMDB (only with
- *      tmdb_api_key set).
+ *      tmdb_api_key set), and of IMDb / Popcornmeter ratings from MDBList
+ *      (only with mdblist_api_key set).
  *   5. Recomputes every widget and every period of every panel.
  *
  * Run this every 15 minutes, matching the widget cache TTL. Two ways to
@@ -90,6 +91,11 @@ $rebuild = $step('library_rebuild', fn() => $app->library->maintainRebuild(
     max(1, (int) $config['library_backfill_pages_per_run'])
 ));
 $posterCount = $step('posters', fn() => $app->library->backfillPosters($app->posters, max(0, (int) $config['poster_backfill_per_run'])));
+$ratingCount = $step('ratings', fn() => $app->library->backfillRatings(
+    $app->ratings,
+    max(0, (int) $config['ratings_backfill_per_run']),
+    $app->onPageTitleKeys()
+));
 
 foreach (WidgetRegistry::SIMPLE_IDS as $id) {
     $step($id, fn() => WidgetCache::remember($id, ['id' => $id], 900, $handlers[$id], true));
@@ -129,6 +135,9 @@ if ($rebuild && $rebuild['status'] !== 'idle') {
 }
 if ($posterCount) {
     $summary .= sprintf(' — posters: +%d', $posterCount);
+}
+if ($ratingCount) {
+    $summary .= sprintf(' — ratings: +%d', $ratingCount);
 }
 
 $coverage = $app->library->coverage();

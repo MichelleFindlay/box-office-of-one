@@ -53,9 +53,9 @@ return [
     'tmdb_api_key' => '',
 
     // Optional: read "Now Watching" straight from your Plex server instead
-    // of relying on a live Trakt scrobbler — real playback position, stays
-    // up while paused, and shows which device it's on. Falls back to Trakt
-    // whenever nothing's playing on Plex (or Plex can't be reached).
+    // of relying on a live Trakt scrobbler — real playback position, and
+    // stays up while paused. Falls back to Trakt whenever nothing's playing
+    // on Plex (or Plex can't be reached).
     //   plex_token:  your X-Plex-Token — the only required setting. See
     //                https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
     //                Stays server-side; posters are proxied via plex_art.php.
@@ -71,6 +71,17 @@ return [
     'plex_server' => '',
     'plex_user'   => '',
     'plex_url'    => '',
+
+    // Optional: IMDb rating and Rotten Tomatoes Popcornmeter (audience score)
+    // next to each title, from MDBList — neither comes from Trakt itself.
+    // Trakt's own viewer rating is shown with or without this.
+    // Get a free key at https://mdblist.com/preferences/ (1,000 requests/day).
+    // cron.php looks up ratings_backfill_per_run titles per run (heaviest-
+    // watched first), each cached a week, never exceeding
+    // mdblist_daily_limit requests in any 24 hours.
+    'mdblist_api_key'          => '',
+    'mdblist_daily_limit'      => 999,
+    'ratings_backfill_per_run' => 50,
 
     // Local history snapshot (see lib/Library.php). cron.php pulls this many
     // pages of history (100 plays/page) per run while backfilling, so a

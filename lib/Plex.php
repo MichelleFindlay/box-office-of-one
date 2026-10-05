@@ -7,8 +7,7 @@ require_once __DIR__ . '/Trakt.php'; // readGuarded()/writeGuarded()
  * Optional direct Plex connection for the "Now Watching" card. Trakt only
  * knows something is playing if a scrobbler reports it live (and loses it
  * the moment you pause); asking your Plex server directly gives the real
- * playback position, paused state, and which device it's on — no
- * scrobbler needed.
+ * playback position and paused state — no scrobbler needed.
  *
  * Only plex_token is required. The server is found through Plex's own
  * account API (plex.tv/api/v2/resources), which lists every server your
@@ -184,27 +183,9 @@ class Plex
             return null;
         }
 
-        $cacheFile = $this->cacheDir . '/plex_sessions.json';
-        $data = null;
-        if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $ttl) {
-            $data = json_decode((string) file_get_contents($cacheFile), true);
-        }
-
-        if (!is_array($data)) {
-            $server = $this->server();
-            if ($server === null) {
-                return null;
-            }
-            $response = Http::request('GET', $server['url'] . '/status/sessions', $this->headers($server['token']), null, 5);
-            if ($response === null || $response['status'] !== 200) {
-                $this->forgetServer();
-                return null;
-            }
-            $data = json_decode($response['body'], true);
-            if (!is_array($data)) {
-                return null;
-            }
-            @file_put_contents($cacheFile, json_encode($data));
+        $data = $this->fetch('/status/sessions', 'plex_sessions.json', $ttl);
+        if ($data === null) {
+            return null;
         }
 
         $best = null;
@@ -227,6 +208,93 @@ class Plex
         }
 
         return $best;
+    }
+
+    /**
+     * Your most recently finished movies and episodes, newest first, from
+     * Plex's own play history — which records a play the moment it ends,
+     * whereas Trakt only hears about it when a sync tool next runs (e.g.
+     * PlexTraktSync's periodic `sync`). Same user filter as currentSession().
+     *
+     * @return array<int, array> raw Plex history metadata
+     */
+    public function recentHistory(int $limit, int $ttl): array
+    {
+        $account = $this->accountId();
+        if (!$this->enabled() || $account === null) {
+            return [];
+        }
+
+        $query = http_build_query([
+            'sort'                   => 'viewedAt:desc',
+            'accountID'              => $account,
+            'X-Plex-Container-Start' => 0,
+            'X-Plex-Container-Size'  => $limit * 3, // room for music etc. filtered out below
+        ]);
+        $data = $this->fetch('/status/sessions/history/all?' . $query, 'plex_history.json', $ttl);
+
+        $items = [];
+        foreach ($data['MediaContainer']['Metadata'] ?? [] as $item) {
+            if (in_array($item['type'] ?? '', ['movie', 'episode'], true) && !empty($item['viewedAt'])
+                && (string) ($item['accountID'] ?? $account) === $account) {
+                $items[] = $item;
+            }
+        }
+
+        return array_slice($items, 0, $limit);
+    }
+
+    /**
+     * Plex account id whose plays to show: plex_user's (looked up by name,
+     * cached a day), or the server owner's (always 1) when that's blank.
+     */
+    private function accountId(): ?string
+    {
+        if ($this->user === '') {
+            return '1';
+        }
+
+        $data = $this->fetch('/accounts', 'plex_accounts.json', 86400);
+        foreach ($data['MediaContainer']['Account'] ?? [] as $a) {
+            if (strcasecmp((string) ($a['name'] ?? ''), $this->user) === 0) {
+                return (string) $a['id'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * GET a server endpoint as JSON, cached for $ttl seconds in cache/$cacheName.
+     * A failed request forgets the discovered server address so the next
+     * attempt finds a working one.
+     */
+    private function fetch(string $path, string $cacheName, int $ttl): ?array
+    {
+        $cacheFile = $this->cacheDir . '/' . $cacheName;
+        if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < $ttl) {
+            $data = json_decode((string) file_get_contents($cacheFile), true);
+            if (is_array($data)) {
+                return $data;
+            }
+        }
+
+        $server = $this->server();
+        if ($server === null) {
+            return null;
+        }
+        $response = Http::request('GET', $server['url'] . $path, $this->headers($server['token']), null, 5);
+        if ($response === null || $response['status'] !== 200) {
+            $this->forgetServer();
+            return null;
+        }
+        $data = json_decode($response['body'], true);
+        if (!is_array($data)) {
+            return null;
+        }
+        @file_put_contents($cacheFile, json_encode($data));
+
+        return $data;
     }
 
     /**
