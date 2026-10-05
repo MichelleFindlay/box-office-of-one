@@ -100,10 +100,10 @@ function renderTitleListMarkup(?array $rows, string $emptyMessage): void
         $name = $r['url']
             ? '<a href="' . e($r['url']) . '" target="_blank" rel="noopener">' . e($r['name']) . '</a>'
             : e($r['name']);
-        $infoKey = preg_match('/^s\d+$/', $r['key'] ?? '') ? ' data-info-key="' . e($r['key']) . '"' : '';
-        echo '<li class="track-row"' . $infoKey . '>'
+        $infoKey = preg_match('/^[ms]\d+$/', $r['key'] ?? '') ? ' data-info-key="' . e($r['key']) . '"' : '';
+        echo '<li class="track-row">'
             . '<span class="rank">' . (int) $r['rank'] . '</span>'
-            . '<span class="thumb thumb-poster">' . $thumb . '</span>'
+            . '<span class="thumb thumb-poster"' . $infoKey . '>' . $thumb . '</span>'
             . '<span class="meta"><div class="name">' . $name . '</div><div class="artist">' . e($r['sub']) . '</div>'
             . renderRatingChips($r['ratings'] ?? []) . '</span>'
             . '<span class="count">' . e($r['count'])
@@ -247,7 +247,7 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
 
     <?php $heroInitial = strtoupper(mb_substr($current['title'] ?? '?', 0, 1)); ?>
     <section class="now-playing">
-        <div class="art-tile art-tile-poster">
+        <div class="art-tile art-tile-poster" data-art-tile<?= !empty($current['info_key']) ? ' data-info-key="' . e($current['info_key']) . '"' : '' ?>>
             <span class="art-tile-fallback" data-art-fallback
                   style="<?= empty($current['image']) ? '' : 'display:none' ?>"><?= e($heroInitial) ?></span>
             <img data-art-img src="<?= e($current['image'] ?? '') ?>" alt="Poster"
@@ -259,7 +259,7 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
                     ? '<span class="eq"><span></span><span></span><span></span></span> Now watching'
                     : 'Last watched' ?>
             </div>
-            <p class="track-name" data-track-name<?= !empty($current['info_key']) ? ' data-info-key="' . e($current['info_key']) . '"' : '' ?>><?= e($current['title'] ?? 'Nothing watched yet') ?></p>
+            <p class="track-name" data-track-name><?= e($current['title'] ?? 'Nothing watched yet') ?></p>
             <p class="track-artist" data-track-artist><?= e($current['subtitle'] ?? '') ?></p>
             <p class="track-album" data-track-album><?= e($current['meta'] ?? '') ?></p>
             <div class="hero-ratings" data-hero-ratings><?= renderRatingChips($current['ratings'] ?? []) ?></div>
@@ -276,8 +276,8 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
             </div>
         </div>
         <?php $prevInitial = strtoupper(mb_substr($previous['title'] ?? '?', 0, 1)); ?>
-        <div class="prev-track" data-prev-track style="<?= $previous ? '' : 'display:none' ?>"<?= !empty($previous['info_key']) ? ' data-info-key="' . e($previous['info_key']) . '"' : '' ?>>
-            <div class="prev-track-thumb prev-track-thumb-poster">
+        <div class="prev-track" data-prev-track style="<?= $previous ? '' : 'display:none' ?>">
+            <div class="prev-track-thumb prev-track-thumb-poster" data-prev-thumb<?= !empty($previous['info_key']) ? ' data-info-key="' . e($previous['info_key']) . '"' : '' ?>>
                 <span class="prev-track-thumb-fallback" data-prev-art-fallback
                       style="<?= empty($previous['image']) ? '' : 'display:none' ?>"><?= e($prevInitial) ?></span>
                 <img data-prev-art-img src="<?= e($previous['image'] ?? '') ?>" alt=""
