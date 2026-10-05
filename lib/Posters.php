@@ -55,14 +55,13 @@ class Posters
 
         $kind = $type === 'movie' ? 'movie' : 'tv';
         $cacheFile = $this->cacheFile($type, $tmdbId);
+        $cached = is_file($cacheFile) ? json_decode((string) file_get_contents($cacheFile), true) : null;
 
-        // A month — posters change rarely, and a missing one isn't worth
-        // re-asking about often either.
-        if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < 2592000) {
-            $cached = json_decode((string) file_get_contents($cacheFile), true);
-            if (is_array($cached)) {
-                return $cached + $empty;
-            }
+        // Refreshed after a month (posters change rarely, and a missing one
+        // isn't worth re-asking about often either), but a stored result is
+        // never thrown away: it's served whenever a refresh isn't possible.
+        if (is_array($cached) && ($cacheOnly || $this->isCached($type, $tmdbId))) {
+            return $cached + $empty;
         }
 
         if ($cacheOnly) {
@@ -72,7 +71,7 @@ class Posters
         $body = Http::get('https://api.themoviedb.org/3/' . $kind . '/' . $tmdbId . '?api_key=' . rawurlencode($this->apiKey));
         $data = $body !== null ? json_decode($body, true) : null;
         if (!is_array($data)) {
-            return $empty; // not cached, so a transient failure gets retried next time
+            return is_array($cached) ? $cached + $empty : $empty; // retried next time
         }
 
         $result = [

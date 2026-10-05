@@ -248,7 +248,7 @@ body {
     padding-left: 24px;
     border-left: 1px solid var(--card-border);
     flex: none;
-    max-width: 220px;
+    max-width: 320px;
 }
 
 .prev-track-thumb {
@@ -290,6 +290,7 @@ body {
     letter-spacing: 0.08em;
     color: var(--fg-dim);
     margin-bottom: 4px;
+    white-space: nowrap;
 }
 
 .prev-track-name {
@@ -1042,24 +1043,25 @@ body {
     gap: 6px;
 }
 
-/* Streaks: GitHub-style calendar, one column per week, Monday on top */
+/* Streaks: GitHub-style calendar, one column per week, Monday on top.
+   Columns share the available width (squares sized to fit) rather than
+   being a fixed size, so the whole year fits without a scrollbar. */
 
 .streak-grid-wrap {
-    overflow-x: auto;
     margin: 16px 0 8px;
-    padding-bottom: 4px;
 }
 
 .streak-grid {
     display: grid;
-    grid-template-rows: repeat(7, 9px);
+    grid-template-rows: repeat(7, auto);
     grid-auto-flow: column;
-    grid-auto-columns: 9px;
+    grid-auto-columns: 1fr;
     gap: 2px;
-    width: max-content;
+    width: 100%;
 }
 
 .streak-cell {
+    aspect-ratio: 1;
     border-radius: 2px;
     background: rgba(255, 255, 255, 0.06);
 }
@@ -1167,4 +1169,142 @@ a.pick-title:hover {
 .auth-link {
     color: var(--accent);
     margin-left: 12px;
+}
+
+/* --- Score chips (IMDb / Trakt viewer rating / Rotten Tomatoes Popcornmeter) --- */
+
+.rating-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.rating-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--fg);
+    white-space: nowrap;
+}
+
+.rating-label {
+    font-weight: 700;
+}
+
+.rating-imdb .rating-label {
+    color: #f5c518;
+}
+
+.rating-trakt .rating-label {
+    color: #ed2224;
+}
+
+.hero-ratings .rating-chips {
+    margin-top: 10px;
+}
+
+.hero-ratings .rating-chip {
+    font-size: 0.75rem;
+    padding: 3px 9px;
+}
+
+/* The previously-watched card is narrow, so its chips are smaller and
+   kept to one row: any that don't fit are hidden whole (they wrap onto a
+   second row that's clipped away) instead of stacking up untidily. */
+.prev-track .rating-chips {
+    margin-top: 6px;
+    max-height: 18px;
+    overflow: hidden;
+}
+
+.prev-track .rating-chip {
+    font-size: 0.66rem;
+    line-height: 18px;
+    padding: 0 6px;
+}
+
+.pick-info .rating-chips {
+    margin-bottom: 8px;
+}
+
+/* Show progress chip: episodes watched vs. aired */
+
+.rating-progress .rating-label {
+    color: var(--fg-dim);
+}
+
+.rating-progress.rating-complete .rating-label {
+    color: #6fd07c;
+}
+
+/* --- TV show hover card --- */
+
+.info-card {
+    position: absolute;
+    z-index: 50;
+    width: 340px;
+    max-width: calc(100vw - 24px);
+    background: #14141a;
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+    font-size: 0.82rem;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.info-card.visible {
+    opacity: 1;
+    transform: none;
+}
+
+.info-card-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+
+.info-card-facts,
+.info-card-genres {
+    color: var(--fg-dim);
+    margin-top: 3px;
+}
+
+.info-card .rating-chips {
+    margin-top: 8px;
+}
+
+.info-card-overview {
+    margin: 10px 0 0;
+    line-height: 1.45;
+    color: var(--fg);
+    display: -webkit-box;
+    -webkit-line-clamp: 6;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.info-card-rows {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 10px;
+    margin: 10px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--card-border);
+}
+
+.info-card-rows dt {
+    color: var(--fg-dim);
+}
+
+.info-card-rows dd {
+    margin: 0;
 }

@@ -3,6 +3,7 @@
 require_once __DIR__ . '/Trakt.php';
 require_once __DIR__ . '/Library.php';
 require_once __DIR__ . '/Posters.php';
+require_once __DIR__ . '/Ratings.php';
 
 /**
  * Computes the insight widgets (the clickable cards below the panels).
@@ -20,14 +21,17 @@ class Widgets
     private Trakt $trakt;
     private Library $library;
     private Posters $posters;
+    private Ratings $ratings;
     private array $config;
     private DateTimeZone $tz;
+    private ?array $myRatings = null;
 
-    public function __construct(Trakt $trakt, Library $library, Posters $posters, array $config)
+    public function __construct(Trakt $trakt, Library $library, Posters $posters, Ratings $ratings, array $config)
     {
         $this->trakt = $trakt;
         $this->library = $library;
         $this->posters = $posters;
+        $this->ratings = $ratings;
         $this->config = $config;
         $this->tz = Trakt::resolveTimezone($config['timezone'] ?? '');
     }
@@ -40,7 +44,7 @@ class Widgets
     /**
      * Honest "this is based on X" footnote for whole-history widgets.
      */
-    private function coverageNote(int $playCount, int $manualExcluded = 0): string
+    private function coverageNote(int $playCount, int $bulkExcluded = 0): string
     {
         $coverage = $this->library->coverage();
         $note = 'Based on ' . number_format($playCount) . ' plays';
@@ -52,25 +56,19 @@ class Widgets
         }
         $note .= '.';
 
-        if ($manualExcluded > 0) {
-            $note .= ' Leaves out ' . number_format($manualExcluded) . ' plays added by hand with "mark as watched", since their times aren\'t real watch times.';
+        if ($bulkExcluded > 0) {
+            $note .= ' Leaves out ' . number_format($bulkExcluded) . ' plays logged in bulk at the exact same second (e.g. "mark season as watched"), since their times aren\'t real watch times.';
         }
 
         return $note;
     }
 
     /**
-     * Plays whose timestamp reflects when they were really watched (see
-     * Library::isManual()), plus how many were left out.
-     *
-     * @return array{0: array, 1: int}
+     * See Library::timedPlays().
      */
     private function timedPlays(): array
     {
-        $all = $this->library->storedPlays();
-        $timed = array_values(array_filter($all, fn($p) => !Library::isManual($p)));
-
-        return [$timed, count($all) - count($timed)];
+        return $this->library->timedPlays();
     }
 
     /**
@@ -91,11 +89,192 @@ class Widgets
         return $this->posters->lookup($key[0] === 'm' ? 'movie' : 'show', $t['tmdb'] ?? null, true)['poster'];
     }
 
+    /**
+     * Score chips shown next to a title: IMDb rating and Rotten Tomatoes
+     * Popcornmeter (from MDBList, when configured and already cached) and
+     * Trakt's viewer rating (from Trakt itself, falling back to MDBList's
+     * copy). Missing scores are simply left out.
+     *
+     * @param ?int $traktPercent a fresher Trakt score to prefer, e.g. from a live API response
+     * @return array<int, array{kind: string, label: string, value: string, title: string}>
+     */
+    /**
+     * Your own Trakt rating (1–10) for a movie or show, or null if unrated.
+     */
+    public function myRating(string $key): ?int
+    {
+        if ($this->myRatings === null) {
+            $this->myRatings = [];
+            foreach ($this->trakt->getRatings() as $r) {
+                $type = $r['type'] ?? '';
+                $id = $r[$type]['ids']['trakt'] ?? null;
+                if (($type === 'movie' || $type === 'show') && $id !== null) {
+                    $this->myRatings[($type === 'movie' ? 'm' : 's') . $id] = (int) $r['rating'];
+                }
+            }
+        }
+
+        return $this->myRatings[$key] ?? null;
+    }
+
+    /**
+     * Combined community score (0–100): the average of whichever of IMDb
+     * (scaled from 0–10), Trakt and the Rotten Tomatoes Popcornmeter the
+     * title has. Null if it has none.
+     */
+    public function communityScore(string $key): ?int
+    {
+        $mdb = $this->ratings->lookup($key) ?? [];
+        $scores = array_filter([
+            !empty($mdb['imdb']) ? $mdb['imdb'] * 10 : null,
+            $this->library->title($key)['tr'] ?? $mdb['trakt'] ?? null,
+            $mdb['popcorn'] ?? null,
+        ], fn($v) => $v !== null);
+
+        return $scores ? (int) round(array_sum($scores) / count($scores)) : null;
+    }
+
+    /**
+     * Top Movies for a period, best first: by your own rating, then the
+     * combined community score, with plays only breaking ties. For a film
+     * you haven't rated, the community score stands in for your rating —
+     * otherwise a film you gave 2/10 would outrank an unrated 90% one.
+     *
+     * @return array<int, array>|null topTitles() rows plus 'mine' and 'community', or null while syncing
+     */
+    public function topMovies(int $sinceUnix, int $limit): ?array
+    {
+        $movies = $this->library->topTitles('m', $sinceUnix, PHP_INT_MAX);
+        if ($movies === null) {
+            return null;
+        }
+
+        foreach ($movies as &$m) {
+            $m['mine'] = $this->myRating($m['key']);
+            $m['community'] = $this->communityScore($m['key']);
+        }
+        unset($m);
+
+        $sortKey = fn($m) => [
+            $m['mine'] !== null ? $m['mine'] * 10 : ($m['community'] ?? -1),
+            $m['community'] ?? -1,
+            $m['plays'],
+            $m['last'],
+        ];
+        usort($movies, fn($a, $b) => $sortKey($b) <=> $sortKey($a));
+
+        return array_slice($movies, 0, $limit);
+    }
+
+    /**
+     * Chips for a title: show progress first (shows only), then scores.
+     */
+    public function titleChips(?string $key, ?int $traktPercent = null, bool $allowLookup = false): array
+    {
+        return array_merge($this->progressChips($key), $this->ratingChips($key, $traktPercent, $allowLookup));
+    }
+
+    /**
+     * "Watched 75%" chip for a show — see Library::showProgress().
+     */
+    public function progressChips(?string $key): array
+    {
+        $progress = $key !== null ? $this->library->showProgress($key) : null;
+        if ($progress === null) {
+            return [];
+        }
+
+        return [[
+            'kind'  => 'progress' . ($progress['pct'] >= 100 ? ' rating-complete' : ''),
+            'label' => 'Watched',
+            'value' => $progress['pct'] . '%',
+            'title' => number_format($progress['watched']) . ' of ' . number_format($progress['aired']) . ' aired episodes watched (not counting specials)',
+        ]];
+    }
+
+    public function ratingChips(?string $key, ?int $traktPercent = null, bool $allowLookup = false): array
+    {
+        if ($key === null || !preg_match('/^[ms]\d+$/', $key)) {
+            return [];
+        }
+
+        $mdb = $this->ratings->lookup($key, $allowLookup) ?? [];
+        $trakt = $traktPercent ?? ($this->library->title($key)['tr'] ?? null) ?? ($mdb['trakt'] ?? null);
+
+        $chips = [];
+        if (!empty($mdb['imdb'])) {
+            $votes = !empty($mdb['imdb_votes']) ? ' · ' . number_format($mdb['imdb_votes']) . ' votes' : '';
+            $chips[] = ['kind' => 'imdb', 'label' => 'IMDb', 'value' => number_format($mdb['imdb'], 1), 'title' => 'IMDb rating' . $votes];
+        }
+        if ($trakt !== null) {
+            $chips[] = ['kind' => 'trakt', 'label' => 'Trakt', 'value' => $trakt . '%', 'title' => 'Trakt viewer rating'];
+        }
+        if (!empty($mdb['popcorn'])) {
+            $chips[] = ['kind' => 'popcorn', 'label' => '🍿', 'value' => $mdb['popcorn'] . '%', 'title' => 'Rotten Tomatoes Popcornmeter (audience score)'];
+        }
+
+        return $chips;
+    }
+
+    /**
+     * Everything the hover card shows for a TV show: Trakt's summary
+     * (network, status, synopsis...), your progress and last-watched
+     * episode from the local history, and the next episode due to air.
+     * Only shows already in your history are looked up, so this can't be
+     * used to proxy arbitrary Trakt requests.
+     */
+    public function showInfo(string $key): ?array
+    {
+        $local = $this->library->title($key);
+        if ($key[0] !== 's' || $local === null) {
+            return null;
+        }
+
+        $id = substr($key, 1);
+        $show = $this->trakt->call('/shows/' . $id, ['extended' => 'full'], 86400);
+        $show = is_array($show) ? $show : [];
+        // 204 (nothing scheduled) caches as null like any other response.
+        $next = $this->trakt->call('/shows/' . $id . '/next_episode', ['extended' => 'full'], 21600);
+
+        $statuses = ['returning series' => 'Returning series', 'continuing' => 'Returning series', 'ended' => 'Ended',
+            'canceled' => 'Cancelled', 'in production' => 'In production', 'planned' => 'Planned', 'pilot' => 'Pilot', 'upcoming' => 'Upcoming'];
+        $status = $statuses[strtolower((string) ($show['status'] ?? ''))] ?? null;
+
+        $last = $this->library->lastPlay($key);
+
+        return [
+            'title'         => $show['title'] ?? $local['t'],
+            'year'          => $show['year'] ?? $local['y'],
+            'overview'      => (string) ($show['overview'] ?? ''),
+            'facts'         => array_values(array_filter([
+                $show['network'] ?? null,
+                $status,
+                $show['certification'] ?? null,
+                !empty($show['runtime']) ? $show['runtime'] . ' min' : null,
+                isset($show['country']) ? strtoupper($show['country']) : null,
+            ])),
+            'genres'        => array_map([Trakt::class, 'prettyGenre'], array_slice((array) ($show['genres'] ?? $local['g'] ?? []), 0, 4)),
+            'progress'      => $this->library->showProgress($key),
+            'last_watched'  => $last ? [
+                'code'  => Trakt::episodeCode($last[4], $last[5]),
+                'title' => $last[7],
+                'date'  => $this->localTime($last[1])->format('j M Y'),
+            ] : null,
+            'next_episode'  => is_array($next) && isset($next['season']) ? [
+                'code'  => Trakt::episodeCode((int) $next['season'], (int) ($next['number'] ?? 0)),
+                'title' => (string) ($next['title'] ?? ''),
+                'date'  => !empty($next['first_aired']) ? $this->localTime((int) strtotime($next['first_aired']))->format('D j M Y') : null,
+            ] : null,
+            'chips'         => $this->ratingChips($key),
+            'url'           => !empty($local['slug']) ? 'https://trakt.tv/shows/' . $local['slug'] : null,
+        ];
+    }
+
     // --- Widgets ---------------------------------------------------------
 
     public function watchClock(): array
     {
-        [$plays, $manual] = $this->timedPlays();
+        [$plays, $bulk] = $this->timedPlays();
         if (!$plays) {
             return ['available' => false];
         }
@@ -110,13 +289,13 @@ class Widgets
         return [
             'hours'       => $hours,
             'label'       => sprintf('Prime time: %02d:00–%02d:00', $peak, ($peak + 1) % 24),
-            'sample_note' => 'Times are when each play finished, which is what Trakt records. ' . $this->coverageNote(count($plays), $manual),
+            'sample_note' => 'Times are when each play finished, which is what Trakt records. ' . $this->coverageNote(count($plays), $bulk),
         ];
     }
 
     public function weekRhythm(): array
     {
-        [$plays, $manual] = $this->timedPlays();
+        [$plays, $bulk] = $this->timedPlays();
         if (!$plays) {
             return ['available' => false];
         }
@@ -133,7 +312,7 @@ class Widgets
             'days'        => array_map(fn($m) => round($m / 60, 1), $minutes), // hours
             'labels'      => $labels,
             'peak_day'    => $labels[$peakIdx],
-            'sample_note' => $this->coverageNote(count($plays), $manual),
+            'sample_note' => $this->coverageNote(count($plays), $bulk),
         ];
     }
 
@@ -191,7 +370,7 @@ class Widgets
      */
     public function binge(): array
     {
-        [$plays, $manual] = $this->timedPlays();
+        [$plays, $bulk] = $this->timedPlays();
         usort($plays, fn($a, $b) => $a[1] <=> $b[1]);
 
         $sessions = [];
@@ -237,8 +416,10 @@ class Widgets
         $top = [];
         foreach (array_slice($sessions, 0, 5) as $s) {
             $top[] = [
+                'key'      => $s['key'],
                 'show'     => $this->library->title($s['key'])['t'] ?? '?',
                 'poster'   => $this->posterFor($s['key']),
+                'ratings'  => $this->titleChips($s['key']),
                 'episodes' => $s['episodes'],
                 'hours'    => round($s['minutes'] / 60, 1),
                 'date'     => $this->localTime($s['start'])->format('j M Y'),
@@ -249,7 +430,7 @@ class Widgets
         return [
             'sessions'      => $top,
             'session_count' => count($sessions),
-            'sample_note'   => 'A binge is 3+ episodes of one show back to back, each within 3 hours of the last. ' . $this->coverageNote(count($plays), $manual),
+            'sample_note'   => 'A binge is 3+ episodes of one show back to back, each within 3 hours of the last. ' . $this->coverageNote(count($plays), $bulk),
         ];
     }
 
@@ -298,7 +479,7 @@ class Widgets
      */
     public function streaks(): array
     {
-        [$plays, $manual] = $this->timedPlays();
+        [$plays, $bulk] = $this->timedPlays();
         if (!$plays) {
             return ['available' => false];
         }
@@ -360,7 +541,7 @@ class Widgets
             'current'       => $current,
             'calendar'      => $calendar,
             'active_days'   => $activeDays,
-            'sample_note'   => $this->coverageNote(count($plays), $manual),
+            'sample_note'   => $this->coverageNote(count($plays), $bulk),
         ];
     }
 
@@ -459,6 +640,7 @@ class Widgets
             $poster = Trakt::imageUrl($m, 'poster')
                 ?? $this->posters->lookup('movie', $m['ids']['tmdb'] ?? null)['poster'];
             $pick = [
+                'ratings'  => $this->ratingChips(isset($m['ids']['trakt']) ? 'm' . $m['ids']['trakt'] : null, Library::traktPercent($m), true),
                 'title'    => $m['title'] ?? '?',
                 'year'     => $m['year'] ?? null,
                 'runtime'  => (int) ($m['runtime'] ?? 0),

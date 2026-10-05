@@ -101,11 +101,32 @@ class Trakt
             }
         }
 
+        // Long-lived data (ratings, watchlist, profile, show details — an
+        // hour's TTL or more) falls back to the last saved copy, however
+        // old, whenever a fresh one can't be had: rate limited, Trakt down,
+        // an error. Short-lived data like "now watching" doesn't, since a
+        // stale copy there would be misleading rather than helpful.
+        $stale = function () use ($ttl, $cacheFile) {
+            if ($ttl < 3600 || !is_file($cacheFile)) {
+                return null;
+            }
+            $cached = json_decode((string) file_get_contents($cacheFile), true);
+
+            return is_array($cached) && array_key_exists('data', $cached) ? $cached : null;
+        };
+
         if ($cacheOnly || $this->rateLimited()) {
-            return null;
+            return $stale();
         }
 
-        $url = self::BASE_URL . $path . ($params ? '?' . http_build_query($params) : '');
+        // Trakt's CDN (Cloudflare) caches public responses for up to an hour
+        // per exact URL, which would quietly serve hour-old history to the
+        // now-watching poll and the history sync. Anything wanted fresher
+        // than that gets a parameter Trakt ignores, but which makes the URL
+        // (and so the CDN's cache entry) unique. Signed-in requests aren't
+        // CDN-cached, but it does no harm there either.
+        $requestParams = $ttl < 3600 ? $params + ['fresh' => time()] : $params;
+        $url = self::BASE_URL . $path . ($requestParams ? '?' . http_build_query($requestParams) : '');
         $response = Http::request('GET', $url, $this->headers());
 
         if ($response !== null && $response['status'] === 401 && $authed) {
@@ -116,12 +137,12 @@ class Trakt
         }
 
         if ($response === null) {
-            return null;
+            return $stale();
         }
 
         if ($response['status'] === 429) {
             $this->noteRateLimit((int) ($response['headers']['retry-after'] ?? 60));
-            return null;
+            return $stale();
         }
 
         if ($response['status'] === 204) {
@@ -129,7 +150,7 @@ class Trakt
         } elseif ($response['status'] >= 200 && $response['status'] < 300) {
             $decoded = json_decode($response['body'], true);
             if ($decoded === null && trim($response['body']) !== 'null') {
-                return null;
+                return $stale();
             }
             $result = [
                 'data'       => $decoded,
@@ -137,7 +158,7 @@ class Trakt
                 'item_count' => (int) ($response['headers']['x-pagination-item-count'] ?? (is_array($decoded) ? count($decoded) : 0)),
             ];
         } else {
-            return null;
+            return $stale();
         }
 
         if ($ttl > 0) {
@@ -543,10 +564,12 @@ class Trakt
     }
 
     /**
-     * Lifetime totals from /users/{id}/stats (plus the profile's join date)
-     * as display-ready strings, keyed for the stats row and api.php.
+     * Lifetime totals from /users/{id}/stats as display-ready strings,
+     * keyed for the stats row and api.php. "Tracking since" is the earlier
+     * of the account's join date and its first play — imported or synced
+     * history often reaches back years before the account itself.
      */
-    public static function formatLifetimeStats(?array $stats, ?array $profile): array
+    public static function formatLifetimeStats(?array $stats, ?array $profile, ?int $firstPlayAt = null): array
     {
         if (!$stats) {
             return [];
@@ -554,7 +577,8 @@ class Trakt
 
         $movieMinutes = (int) ($stats['movies']['minutes'] ?? 0);
         $episodeMinutes = (int) ($stats['episodes']['minutes'] ?? 0);
-        $joined = $profile['joined_at'] ?? null;
+        $joined = isset($profile['joined_at']) ? strtotime($profile['joined_at']) : false;
+        $since = array_filter([$joined ?: null, $firstPlayAt]);
 
         return [
             'movies'       => number_format((int) ($stats['movies']['watched'] ?? 0)),
@@ -564,7 +588,7 @@ class Trakt
             'tv_time'      => self::formatMinutes($episodeMinutes),
             'total_time'   => number_format(($movieMinutes + $episodeMinutes) / 1440, 1) . ' days',
             'ratings'      => number_format((int) ($stats['ratings']['total'] ?? 0)),
-            'member_since' => $joined ? date('M Y', strtotime($joined)) : '—',
+            'member_since' => $since ? date('M Y', min($since)) : '—',
         ];
     }
 }

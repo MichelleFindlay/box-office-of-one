@@ -23,11 +23,16 @@ built the same way: plain PHP, no database, flat-file caching.
   Time / This Year / This Month / This Week / Today picker, switched via AJAX.
   These are exact calendar periods (real Jan 1, real 1st-of-month, real
   Monday) computed from the local history snapshot. Shows rank by episodes
-  watched and movies by number of plays. Genres are weighted by minutes
-  watched, so one film doesn't count the same as a 60-episode binge.
+  watched. Movies rank by your own Trakt rating, then a combined community
+  score (the average of IMDb, Trakt and Popcornmeter), with plays only as a
+  tiebreaker. For films you haven't rated, the community score stands in
+  for your rating. Genres are weighted by minutes watched, so one film
+  doesn't count the same as a 60-episode binge.
 - **Lifetime Stats**: movies, shows, episodes, time spent on each, total
-  days, ratings given, and member-since date, straight from Trakt's own
-  totals.
+  days, ratings given, and how far back your history goes. These come from
+  Trakt's own totals when it shares them. Otherwise they're worked out from
+  your local history, since Trakt returns nothing for stats to an app that
+  isn't signed in.
 - **Insight widgets**: click-through popups:
   - **Watch Clock**: a 24-hour radial chart of when you actually press play
   - **Weekly Rhythm**: hours watched per day of the week
@@ -44,10 +49,11 @@ built the same way: plain PHP, no database, flat-file caching.
   - **Watchlist Debt**: how many hours your watchlist holds, how long it'd
     take to clear at your recent pace, and a pick for tonight
 
-  Plays you added by hand with "mark as watched" carry whatever date you
-  picked (often "now" for a whole season at once), not when you really
-  watched them. Watch Clock, Weekly Rhythm, Binge Report, and Streaks leave
-  those out and say how many they skipped. They still count everywhere else.
+  Plays logged in bulk ("mark season as watched", imports) share one
+  timestamp, which is when they were logged, not when you watched them.
+  Watch Clock, Weekly Rhythm, Binge Report, and Streaks leave out any play
+  that shares its exact second with another, and say how many they skipped.
+  Those plays still count everywhere else.
 - **Self-update check**: the footer compares the installed version against
   the latest GitHub release and links to it when an update is available.
 - **MCP server** (optional): lets an AI client (Claude, ChatGPT/OpenAI, or
@@ -107,9 +113,15 @@ drops an item as soon as it's paused.
 
 You can also have the dashboard ask your Plex server directly, through
 Plex's own API. Set `plex_token` in `config.php` and that's it. It then
-shows your real playback position, stays up while paused, and says which
-device you're watching on. It falls back to Trakt whenever nothing is
-playing on Plex or Plex can't be reached.
+shows your real playback position and stays up while paused. It falls back
+to Trakt whenever nothing is playing on Plex or Plex can't be reached.
+
+"Previously watched" (and "Last watched", when nothing's on) also draws on
+Plex's own play history, which records an episode the moment you finish
+it. Trakt's history can trail behind when a sync tool only pushes plays
+across every so often. Plays from both are merged, newest first, and the
+same play reported by both only appears once, so things you watch outside
+Plex still show up.
 
 The server is found automatically through your Plex account
 (`plex.tv/api/v2/resources`, which lists your servers and the addresses
@@ -206,6 +218,31 @@ shows a small footer note, and stops page loads doing their own sync work.
 If you set `cron_secret`, it's required as a `?token=` query param for
 HTTP-triggered runs (CLI runs are always allowed).
 
+## Ratings
+
+Each title in the hero card and the Top Shows / Top Movies lists shows its
+scores as small chips:
+
+- **Trakt** viewer rating: always shown, from Trakt's own data.
+- **IMDb** rating and the **🍿 Rotten Tomatoes Popcornmeter** (audience
+  score): shown once you add a free [MDBList](https://mdblist.com) API key
+  (`mdblist_api_key`, from [your preferences](https://mdblist.com/preferences/)).
+  Trakt carries neither score, and Rotten Tomatoes has no public API.
+
+`cron.php` looks up ratings a batch at a time (`ratings_backfill_per_run`):
+titles on the page first, then the rest, heaviest-watched first. It never
+makes more than `mdblist_daily_limit` requests in 24 hours (default 900,
+under MDBList's free 1,000/day). Titles not looked up yet just show fewer
+chips until a later run fills them in.
+
+Scores are stored on the server and never thrown away. Each is refreshed
+once it's over a week old, but if that can't happen (the daily limit is
+used up, MDBList is down, or it asks the app to slow down), the last known
+scores keep being shown. A cron run gives up after 3 failed requests rather
+than waiting on a timeout for every title. Trakt data that changes slowly
+(your ratings, watchlist, profile, show details) and TMDB posters fall back
+to their last saved copy the same way.
+
 ## Posters
 
 Posters and backdrops come from Trakt's own image data wherever it's
@@ -232,7 +269,7 @@ history through this endpoint.
 | `get_now_watching` | What's playing right now (or last watched), plus the item before it |
 | `list_history` | Individual plays with exact date/time, filterable by `since`/`until`/`type`/`limit` |
 | `find_title` | Every play of titles matching some text, for "when did I last watch…?" or "how far into … am I?" |
-| `top_shows` / `top_movies` | Ranked for a period (`all_time`/`this_year`/`this_month`/`this_week`/`today`) |
+| `top_shows` / `top_movies` | For a period (`all_time`/`this_year`/`this_month`/`this_week`/`today`): shows by episodes watched, movies by your rating then community score |
 | `genre_breakdown` | Genre percentages for a period, weighted by time watched |
 | `period_summary` | Plays, movies, episodes, shows and hours for a period |
 | `lifetime_stats` | Trakt's lifetime totals |

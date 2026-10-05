@@ -32,10 +32,19 @@ require_once __DIR__ . '/Trakt.php';
  */
 class Library
 {
+    /**
+     * Bumped whenever what's stored per play or per title changes (v2: Trakt
+     * viewer rating per title; v3: aired episode count per show). An older snapshot is rebuilt in the
+     * background straight away rather than waiting for the next scheduled
+     * rebuild — titles only pick up new fields when re-downloaded.
+     */
+    private const SCHEMA = 3;
+
     private Trakt $trakt;
     private string $file;
     private string $rebuildFile;
     private ?array $stateCache = null;
+    private ?array $episodesWatchedCache = null;
 
     public function __construct(Trakt $trakt, string $user, string $suffix = '')
     {
@@ -58,7 +67,12 @@ class Library
             $data = $json !== false ? json_decode($json, true) : null;
         }
 
-        $this->stateCache = is_array($data) ? ($data + self::emptyState()) : self::emptyState();
+        if (is_array($data)) {
+            $data['schema'] = $data['schema'] ?? 1; // snapshots from before versioning
+            $this->stateCache = $data + self::emptyState();
+        } else {
+            $this->stateCache = self::emptyState();
+        }
 
         return $this->stateCache;
     }
@@ -66,6 +80,7 @@ class Library
     private function save(array $state): void
     {
         $this->stateCache = $state;
+        $this->episodesWatchedCache = null;
 
         Trakt::ensureCacheDir(dirname($this->file));
         // Write-then-rename so a page request never reads a half-written file.
@@ -85,13 +100,14 @@ class Library
         $now = time();
 
         return [
+            'schema'            => self::SCHEMA,
             'created_at'        => $now,
             'backfill_complete' => false,
             'backfill_anchor'   => $now, // end_at for the whole backfill walk
             'backfill_page'     => 0,    // last page of that walk fetched
             'oldest_seen'       => $now, // local history is complete from here forward
             'synced_through'    => $now, // start_at for syncRecent()
-            'plays'             => [],   // each: [history id, unix ts, 'm'|'e', title key, season, number, runtime mins, episode title, manual 0|1]
+            'plays'             => [],   // each: [history id, unix ts, 'm'|'e', title key, season, number, runtime mins, episode title]
             'titles'            => [],   // title key ('m123' / 's456') => metadata, see titleFromMedia()
         ];
     }
@@ -113,22 +129,18 @@ class Library
             return false;
         }
 
-        // "watch" = added by hand ("mark as watched") rather than scrobbled
-        // or checked in live — see isManual().
-        $manual = ($item['action'] ?? '') === 'watch' ? 1 : 0;
-
         if (($item['type'] ?? '') === 'movie' && isset($item['movie']['ids']['trakt'])) {
             $movie = $item['movie'];
             $key = 'm' . $movie['ids']['trakt'];
             $state['titles'][$key] = self::titleFromMedia($movie, $state['titles'][$key] ?? null);
-            $state['plays'][] = [$hid, $ts, 'm', $key, 0, 0, (int) ($movie['runtime'] ?? 0), '', $manual];
+            $state['plays'][] = [$hid, $ts, 'm', $key, 0, 0, (int) ($movie['runtime'] ?? 0), ''];
         } elseif (($item['type'] ?? '') === 'episode' && isset($item['show']['ids']['trakt'])) {
             $show = $item['show'];
             $ep = $item['episode'] ?? [];
             $key = 's' . $show['ids']['trakt'];
             $state['titles'][$key] = self::titleFromMedia($show, $state['titles'][$key] ?? null);
             $runtime = (int) ($ep['runtime'] ?? 0) ?: (int) ($show['runtime'] ?? 0);
-            $state['plays'][] = [$hid, $ts, 'e', $key, (int) ($ep['season'] ?? 0), (int) ($ep['number'] ?? 0), $runtime, (string) ($ep['title'] ?? ''), $manual];
+            $state['plays'][] = [$hid, $ts, 'e', $key, (int) ($ep['season'] ?? 0), (int) ($ep['number'] ?? 0), $runtime, (string) ($ep['title'] ?? '')];
         } else {
             return false;
         }
@@ -150,7 +162,23 @@ class Library
             'imdb' => $media['ids']['imdb'] ?? null,
             'p'    => Trakt::imageUrl($media, 'poster') ?? ($existing['p'] ?? null),
             'f'    => Trakt::imageUrl($media, 'fanart') ?? ($existing['f'] ?? null),
+            'tr'   => self::traktPercent($media) ?? ($existing['tr'] ?? null),
+            'ae'   => isset($media['aired_episodes']) ? (int) $media['aired_episodes'] : ($existing['ae'] ?? null), // shows only
         ];
+    }
+
+    /**
+     * Trakt's viewer rating (0–10, from extended=full) as a 0–100 score,
+     * or null when too few people have rated it to mean much.
+     */
+    public static function traktPercent(array $media): ?int
+    {
+        $rating = (float) ($media['rating'] ?? 0);
+        if ($rating <= 0 || (int) ($media['votes'] ?? 0) < 10) {
+            return null;
+        }
+
+        return (int) round($rating * 10);
     }
 
     private static function knownIds(array $state): array
@@ -291,8 +319,9 @@ class Library
     public function maintainRebuild(int $rebuildDays, int $pagesPerRun): array
     {
         $state = $this->load();
+        $outdated = (int) $state['schema'] < self::SCHEMA;
 
-        if ($rebuildDays <= 0 || !$state['backfill_complete']) {
+        if (!$state['backfill_complete'] || ($rebuildDays <= 0 && !$outdated)) {
             return ['status' => 'idle'];
         }
 
@@ -300,7 +329,8 @@ class Library
         $shadow->file = $this->rebuildFile;
 
         if (!$shadow->exists()) {
-            if (time() - (int) $state['created_at'] < $rebuildDays * 86400) {
+            $due = $rebuildDays > 0 && time() - (int) $state['created_at'] >= $rebuildDays * 86400;
+            if (!$due && !$outdated) {
                 return ['status' => 'idle'];
             }
             $shadow->save(self::emptyState());
@@ -393,16 +423,55 @@ class Library
     }
 
     /**
-     * Whether a play was added by hand on Trakt ("mark as watched") rather
-     * than scrobbled or checked in as it happened. Its timestamp is then
-     * whatever was picked when marking it — "now" for a whole season at
-     * once, or the release date — not when it was really watched, so the
-     * time-of-day / day-of-week / binge / streak widgets leave these out.
-     * They still count towards totals, genres, and top lists.
+     * Plays whose timestamp can be trusted as a real "finished watching"
+     * time, plus how many were left out. A play is left out when another
+     * play has the exact same second: nobody finishes two things at once,
+     * so that's a bulk entry — "mark season as watched", an import, a sync
+     * tool backfilling a library — and the time is just when it was logged.
+     *
+     * Trakt's own `action` field can't be used for this: plays synced in
+     * by tools like PlexTraktSync are all "watch" (the same as a manual
+     * mark) even though each carries Plex's real viewed-at time.
+     *
+     * Only the time-of-day / day-of-week / binge / streak widgets use this;
+     * every play still counts towards totals, genres, and top lists.
+     *
+     * @return array{0: array, 1: int}
      */
-    public static function isManual(array $play): bool
+    public function timedPlays(): array
     {
-        return !empty($play[8]);
+        $plays = $this->load()['plays'];
+        $perSecond = array_count_values(array_column($plays, 1));
+        $timed = array_values(array_filter($plays, fn($p) => $perSecond[$p[1]] === 1 && !self::dateUnknown($p)));
+
+        return [$timed, count($plays) - count($timed)];
+    }
+
+    /**
+     * Trakt records a play added with "unknown date" as exactly
+     * 1970-01-01 00:00:00 UTC — the play counts, but its date means nothing.
+     */
+    public static function dateUnknown(array $play): bool
+    {
+        return $play[1] <= 0;
+    }
+
+    /**
+     * Timestamp of the earliest play with a known date, or null if none.
+     */
+    public function firstPlayAt(): ?int
+    {
+        $known = array_filter(array_column($this->load()['plays'], 1), fn($ts) => $ts > 0);
+
+        return $known ? min($known) : null;
+    }
+
+    /**
+     * A play's date for API output: ISO 8601 in $tz, or null when unknown.
+     */
+    public static function playDate(array $play, DateTimeZone $tz): ?string
+    {
+        return self::dateUnknown($play) ? null : (new DateTime('@' . $play[1]))->setTimezone($tz)->format(DATE_ATOM);
     }
 
     /**
@@ -424,6 +493,53 @@ class Library
         }
 
         return $match;
+    }
+
+    /**
+     * How far through a show you are: distinct episodes watched against
+     * the number aired so far, both excluding specials (season 0), as
+     * Trakt's own progress does. Rewatches don't count twice. Null for a
+     * movie, or a show whose aired count Trakt didn't provide.
+     *
+     * @return array{watched: int, aired: int, pct: int}|null
+     */
+    public function showProgress(string $key): ?array
+    {
+        $aired = (int) ($this->title($key)['ae'] ?? 0);
+        if ($key[0] !== 's' || $aired <= 0) {
+            return null;
+        }
+
+        if ($this->episodesWatchedCache === null) {
+            $seen = [];
+            foreach ($this->load()['plays'] as $p) {
+                if ($p[2] === 'e' && $p[4] > 0) {
+                    $seen[$p[3]][$p[4] . 'x' . $p[5]] = true;
+                }
+            }
+            $this->episodesWatchedCache = array_map('count', $seen);
+        }
+
+        // Capped at the aired count: Trakt's count can briefly lag behind
+        // an episode you've already scrobbled on release day.
+        $watched = min($aired, $this->episodesWatchedCache[$key] ?? 0);
+
+        return ['watched' => $watched, 'aired' => $aired, 'pct' => (int) floor($watched / $aired * 100)];
+    }
+
+    /**
+     * The most recent play of a title with a known date, or null.
+     */
+    public function lastPlay(string $key): ?array
+    {
+        $last = null;
+        foreach ($this->load()['plays'] as $p) {
+            if ($p[3] === $key && !self::dateUnknown($p) && ($last === null || $p[1] > $last[1])) {
+                $last = $p;
+            }
+        }
+
+        return $last;
     }
 
     public function title(string $key): ?array
@@ -613,12 +729,15 @@ class Library
         foreach (array_slice($plays, 0, max(1, $limit)) as $p) {
             $t = $this->title($p[3]) ?? [];
             $row = [
-                'watched_at' => (new DateTime('@' . $p[1]))->setTimezone($tz)->format(DATE_ATOM),
+                'watched_at' => self::playDate($p, $tz),
                 'type'       => $p[2] === 'm' ? 'movie' : 'episode',
                 'title'      => $t['t'] ?? '?',
                 'year'       => $t['y'] ?? null,
                 'runtime'    => $this->playMinutes($p),
             ];
+            if (self::dateUnknown($p)) {
+                $row['date_unknown'] = true;
+            }
             if ($p[2] === 'e') {
                 $row['episode'] = Trakt::episodeCode($p[4], $p[5]);
                 $row['episode_title'] = $p[7];
@@ -659,14 +778,8 @@ class Library
         }
 
         $state = $this->load();
-        $counts = [];
-        foreach ($state['plays'] as $p) {
-            $counts[$p[3]] = ($counts[$p[3]] ?? 0) + 1;
-        }
-        arsort($counts);
-
         $looked = 0;
-        foreach (array_keys($counts) as $key) {
+        foreach ($this->titlesByPlays() as $key) {
             if ($looked >= $max) {
                 break;
             }
@@ -683,5 +796,62 @@ class Library
         }
 
         return $looked;
+    }
+
+    /**
+     * Keeps IMDb / Popcornmeter scores (when an MDBList key is configured)
+     * filled in and up to date, at most $max requests per call, so a large
+     * library is covered over several cron runs without ever bursting past
+     * the daily cap. Titles with no scores yet come first, then those due a
+     * refresh (over a week old) — in both cases $priorityKeys (what's on the
+     * page) ahead of everything else, heaviest-watched first. Stops as soon
+     * as the cap is reached; stored scores keep being served regardless.
+     *
+     * @param string[] $priorityKeys
+     */
+    public function backfillRatings(Ratings $ratings, int $max, array $priorityKeys = []): int
+    {
+        if (!$ratings->enabled()) {
+            return 0;
+        }
+
+        $order = array_unique(array_merge($priorityKeys, $this->titlesByPlays()));
+        $missing = array_filter($order, fn($k) => !$ratings->has($k));
+        $stale = array_filter($order, fn($k) => $ratings->has($k) && !$ratings->isFresh($k));
+
+        $fetched = 0;
+        $errors = 0;
+        foreach (array_merge($missing, $stale) as $key) {
+            if ($fetched >= $max) {
+                break;
+            }
+            $status = $ratings->refresh($key);
+            if ($status === 'limit') {
+                break; // out of requests for now — next run carries on
+            }
+            if ($status === 'ok') {
+                $fetched++;
+            } elseif (++$errors >= 3) {
+                break; // MDBList looks unreachable — don't sit through a timeout per title
+            }
+        }
+
+        return $fetched;
+    }
+
+    /**
+     * Title keys ordered by how many times they've been played, most first.
+     *
+     * @return string[]
+     */
+    private function titlesByPlays(): array
+    {
+        $counts = [];
+        foreach ($this->load()['plays'] as $p) {
+            $counts[$p[3]] = ($counts[$p[3]] ?? 0) + 1;
+        }
+        arsort($counts);
+
+        return array_map('strval', array_keys($counts));
     }
 }

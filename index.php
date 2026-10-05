@@ -57,6 +57,25 @@ function renderPeriodPicker(string $group, string $active, array $labels): void
 const SYNCING_MESSAGE = 'Still syncing your watch history this far back — check again shortly.';
 
 /**
+ * IMDb / Trakt / Popcornmeter score chips — same markup as ratingChips() in
+ * assets/app.js builds client-side.
+ */
+function renderRatingChips(array $chips, string $extraClass = ''): string
+{
+    if (!$chips) {
+        return '';
+    }
+
+    $html = '<span class="rating-chips' . ($extraClass !== '' ? ' ' . e($extraClass) : '') . '">';
+    foreach ($chips as $c) {
+        $html .= '<span class="rating-chip rating-' . e($c['kind']) . '" title="' . e($c['title']) . '">'
+            . '<span class="rating-label">' . e($c['label']) . '</span> ' . e($c['value']) . '</span>';
+    }
+
+    return $html . '</span>';
+}
+
+/**
  * Same markup as renderTitleListContent() in assets/app.js builds after a
  * period switch — keep the two in step.
  */
@@ -81,11 +100,15 @@ function renderTitleListMarkup(?array $rows, string $emptyMessage): void
         $name = $r['url']
             ? '<a href="' . e($r['url']) . '" target="_blank" rel="noopener">' . e($r['name']) . '</a>'
             : e($r['name']);
-        echo '<li class="track-row">'
+        $infoKey = preg_match('/^s\d+$/', $r['key'] ?? '') ? ' data-info-key="' . e($r['key']) . '"' : '';
+        echo '<li class="track-row"' . $infoKey . '>'
             . '<span class="rank">' . (int) $r['rank'] . '</span>'
             . '<span class="thumb thumb-poster">' . $thumb . '</span>'
-            . '<span class="meta"><div class="name">' . $name . '</div><div class="artist">' . e($r['sub']) . '</div></span>'
-            . '<span class="count">' . e($r['count']) . '<div class="bar"><div class="bar-fill" style="width: ' . (int) $r['pct'] . '%"></div></div></span>'
+            . '<span class="meta"><div class="name">' . $name . '</div><div class="artist">' . e($r['sub']) . '</div>'
+            . renderRatingChips($r['ratings'] ?? []) . '</span>'
+            . '<span class="count">' . e($r['count'])
+            . ($r['pct'] !== null ? '<div class="bar"><div class="bar-fill" style="width: ' . (int) $r['pct'] . '%"></div></div>' : '')
+            . '</span>'
             . '</li>';
     }
     echo '</ol>';
@@ -123,6 +146,7 @@ if (!$needsSetup) {
         try {
             $app->library->syncRecent();
             $app->library->backfillBatch(3);
+            $app->library->backfillRatings($app->ratings, 5, $app->onPageTitleKeys());
         } catch (Throwable $e) {
             // Non-fatal: the page still renders from whatever's stored.
         }
@@ -152,7 +176,7 @@ if (!$needsSetup) {
             ['key' => 'tv_time', 'icon' => 'clock', 'label' => 'TV Time', 'value' => $statsMap['tv_time']],
             ['key' => 'total_time', 'icon' => 'hourglass', 'label' => 'Total', 'value' => $statsMap['total_time']],
             ['key' => 'ratings', 'icon' => 'star', 'label' => 'Ratings', 'value' => $statsMap['ratings']],
-            ['key' => 'member_since', 'icon' => 'calendar-days', 'label' => 'Member Since', 'value' => $statsMap['member_since']],
+            ['key' => 'member_since', 'icon' => 'calendar-days', 'label' => 'Tracking Since', 'value' => $statsMap['member_since']],
         ];
     }
 
@@ -235,9 +259,10 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
                     ? '<span class="eq"><span></span><span></span><span></span></span> Now watching'
                     : 'Last watched' ?>
             </div>
-            <p class="track-name" data-track-name><?= e($current['title'] ?? 'Nothing watched yet') ?></p>
+            <p class="track-name" data-track-name<?= !empty($current['info_key']) ? ' data-info-key="' . e($current['info_key']) . '"' : '' ?>><?= e($current['title'] ?? 'Nothing watched yet') ?></p>
             <p class="track-artist" data-track-artist><?= e($current['subtitle'] ?? '') ?></p>
             <p class="track-album" data-track-album><?= e($current['meta'] ?? '') ?></p>
+            <div class="hero-ratings" data-hero-ratings><?= renderRatingChips($current['ratings'] ?? []) ?></div>
             <div class="watch-progress" data-watch-progress style="<?= !empty($current['live']) ? '' : 'display:none' ?>">
                 <div class="watch-progress-bar"><div class="watch-progress-fill" data-watch-progress-fill></div></div>
                 <span class="watch-progress-label" data-watch-progress-label></span>
@@ -251,7 +276,7 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
             </div>
         </div>
         <?php $prevInitial = strtoupper(mb_substr($previous['title'] ?? '?', 0, 1)); ?>
-        <div class="prev-track" data-prev-track style="<?= $previous ? '' : 'display:none' ?>">
+        <div class="prev-track" data-prev-track style="<?= $previous ? '' : 'display:none' ?>"<?= !empty($previous['info_key']) ? ' data-info-key="' . e($previous['info_key']) . '"' : '' ?>>
             <div class="prev-track-thumb prev-track-thumb-poster">
                 <span class="prev-track-thumb-fallback" data-prev-art-fallback
                       style="<?= empty($previous['image']) ? '' : 'display:none' ?>"><?= e($prevInitial) ?></span>
@@ -262,6 +287,7 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
                 <div class="prev-track-label">Previously watched</div>
                 <div class="prev-track-name" data-prev-track-name><?= e($previous['title'] ?? '') ?></div>
                 <div class="prev-track-artist" data-prev-track-artist><?= e($previous['subtitle'] ?? '') ?></div>
+                <div data-prev-ratings><?= renderRatingChips($previous['ratings'] ?? []) ?></div>
             </div>
         </div>
     </section>

@@ -71,12 +71,12 @@ class Mcp
             ],
             [
                 'name'        => 'top_shows',
-                'description' => 'Your most-watched shows for a period, ranked by episodes watched.',
+                'description' => 'Your most-watched shows for a period, ranked by episodes watched, with how far through each show you are (distinct episodes watched vs. aired, excluding specials).',
                 'inputSchema' => ['type' => 'object', 'properties' => ['period' => $period, 'limit' => ['type' => 'integer', 'description' => 'Default 20, max 200.']]],
             ],
             [
                 'name'        => 'top_movies',
-                'description' => 'Your most-watched movies for a period, ranked by number of plays (then most recent).',
+                'description' => 'Your top movies watched in a period: ranked by your own Trakt rating (or, for films you haven\'t rated, the combined community score), then the combined community score (average of IMDb, Trakt and Rotten Tomatoes Popcornmeter, 0-100), with plays only as a tiebreaker.',
                 'inputSchema' => ['type' => 'object', 'properties' => ['period' => $period, 'limit' => ['type' => 'integer', 'description' => 'Default 20, max 200.']]],
             ],
             [
@@ -91,7 +91,7 @@ class Mcp
             ],
             [
                 'name'        => 'lifetime_stats',
-                'description' => 'Lifetime Trakt totals: movies, shows, episodes, time watched, ratings, member since.',
+                'description' => 'Lifetime Trakt totals: movies, shows, episodes, time watched, ratings, tracking since (earlier of join date and first play).',
                 'inputSchema' => $none,
             ],
         ];
@@ -153,7 +153,9 @@ class Mcp
 
             case 'top_shows':
             case 'top_movies':
-                $rows = $library->topTitles($name === 'top_movies' ? 'm' : 'e', $since, $limit);
+                $rows = $name === 'top_movies'
+                    ? $this->app->widgets->topMovies($since, $limit)
+                    : $library->topTitles('e', $since, $limit);
                 if ($rows === null) {
                     return $this->notCovered();
                 }
@@ -163,7 +165,11 @@ class Mcp
                     'year'         => $r['year'],
                     $name === 'top_movies' ? 'plays' : 'episodes' => $r['plays'],
                     'hours'        => round($r['minutes'] / 60, 1),
-                    'last_watched' => (new DateTime('@' . $r['last']))->setTimezone($tz)->format(DATE_ATOM),
+                    'ratings'      => array_column($this->app->widgets->ratingChips($r['key']), 'value', 'kind'),
+                    'your_rating'  => $r['mine'] ?? null,
+                    'community_score' => $r['community'] ?? null,
+                    'progress'     => $name === 'top_shows' ? $this->app->library->showProgress($r['key']) : null,
+                    'last_watched' => $r['last'] > 0 ? (new DateTime('@' . $r['last']))->setTimezone($tz)->format(DATE_ATOM) : null,
                 ], $rows)];
 
             case 'genre_breakdown':
@@ -206,7 +212,10 @@ class Mcp
                     'plays' => [],
                 ];
             }
-            $play = ['watched_at' => (new DateTime('@' . $p[1]))->setTimezone($this->app->tz)->format(DATE_ATOM)];
+            $play = ['watched_at' => Library::playDate($p, $this->app->tz)];
+            if (Library::dateUnknown($p)) {
+                $play['date_unknown'] = true;
+            }
             if ($p[2] === 'e') {
                 $play['episode'] = Trakt::episodeCode($p[4], $p[5]);
                 $play['episode_title'] = $p[7];
@@ -215,7 +224,7 @@ class Mcp
         }
 
         foreach ($matches as &$m) {
-            usort($m['plays'], fn($a, $b) => strcmp($b['watched_at'], $a['watched_at']));
+            usort($m['plays'], fn($a, $b) => strcmp((string) $b['watched_at'], (string) $a['watched_at'])); // unknown dates sort last
             $m['play_count'] = count($m['plays']);
             $m['plays'] = array_slice($m['plays'], 0, 500);
         }
