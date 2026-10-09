@@ -20,6 +20,8 @@
         bgA: document.querySelector("[data-bg-a]"),
         bgB: document.querySelector("[data-bg-b]"),
         traktLink: document.querySelector("[data-trakt-link]"),
+        watchLinks: document.querySelector("[data-watch-links]"),
+        soundtrackLink: document.querySelector("[data-soundtrack-link]"),
         progress: document.querySelector("[data-watch-progress]"),
         progressFill: document.querySelector("[data-watch-progress-fill]"),
         progressLabel: document.querySelector("[data-watch-progress-label]"),
@@ -365,6 +367,23 @@
             }
         }
 
+        if (els.soundtrackLink) {
+            if (item.soundtrack) {
+                els.soundtrackLink.href = item.soundtrack.url;
+                els.soundtrackLink.title = item.soundtrack.title + " — " + item.soundtrack.artist;
+                els.soundtrackLink.style.display = "";
+            } else {
+                els.soundtrackLink.style.display = "none";
+            }
+        }
+
+        if (els.watchLinks) {
+            els.watchLinks.innerHTML = "";
+            (item.watch || []).forEach(function (l) {
+                els.watchLinks.appendChild(watchLink(l));
+            });
+        }
+
         if (item.backdrop) {
             updateBackground(item.backdrop);
         } else {
@@ -513,7 +532,7 @@
         decades: "Movie Decades",
         streaks: "Streaks",
         hot_takes: "Hot Takes",
-        watchlist: "Watchlist Debt",
+        streaming_changes: "Streaming Changes",
     };
 
     var WIDGET_RENDERERS = {
@@ -524,14 +543,14 @@
         decades: renderDecades,
         streaks: renderStreaks,
         hot_takes: renderHotTakes,
-        watchlist: renderWatchlist,
+        streaming_changes: renderStreamingChanges,
     };
 
     var WIDGET_EMPTY = {
         hot_takes: "No ratings yet — rate a few things on Trakt and check back.",
-        watchlist: "Your watchlist is empty (or private without sign-in).",
         binge: "No binges yet — that's 3+ episodes of one show back to back.",
         decades: "No movies in your history yet.",
+        streaming_changes: "No changes spotted yet. Where your watchlist and history are streaming is checked daily, so arrivals and departures start showing after a day or two. (Needs a TMDB API key.)",
     };
 
     function renderWidget(id, data) {
@@ -637,6 +656,23 @@
         modalBody.appendChild(el("div", "widget-subtext", "Bars show how far into the next one you are. " + (data.source_note || "")));
     }
 
+    // Same markup as renderWatchLinks() in index.php.
+    function watchLink(l) {
+        var a = el("a", "listen-link watch-link");
+        a.href = l.url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.title = "Watch on " + l.name;
+        if (l.logo) {
+            var img = document.createElement("img");
+            img.src = l.logo;
+            img.alt = "";
+            a.appendChild(img);
+        }
+        a.appendChild(el("span", null, l.name));
+        return a;
+    }
+
     // Same markup as renderRatingChips() in index.php.
     function ratingChips(chips) {
         if (!chips || !chips.length) {
@@ -647,7 +683,7 @@
             var chip = el("span", "rating-chip rating-" + c.kind);
             chip.title = c.title;
             chip.appendChild(el("span", "rating-label", c.label));
-            chip.appendChild(document.createTextNode(" " + c.value));
+            chip.appendChild(el("span", "rating-value", c.value));
             wrap.appendChild(chip);
         });
         return wrap;
@@ -773,40 +809,41 @@
         }
     }
 
-    function renderWatchlist(data) {
-        modalBody.appendChild(el("div", "widget-headline", fmt(data.hours) + " hours of watchlist"));
-        var sub = fmt(data.total_items) + " items (" + fmt(data.movies) + " movies, " + fmt(data.shows) + " shows)";
-        if (data.days_to_clear) {
-            sub += " — about " + fmt(data.days_to_clear) + " days to clear at your recent pace of " + fmt(data.per_day_min) + " min/day";
-        } else if (data.per_day_min === null) {
-            sub += " — your recent pace is still syncing.";
-        } else {
-            sub += " — at your recent pace, never. Better get started.";
-        }
-        modalBody.appendChild(el("div", "widget-subtext", sub));
+    function renderStreamingChanges(data) {
+        var total = data.arrived.length + data.left.length;
+        modalBody.appendChild(el("div", "widget-headline", fmt(total) + (total === 1 ? " change" : " changes") + " in the last 30 days"));
+        modalBody.appendChild(el("div", "widget-subtext", "Titles from your watchlist and history, on streaming in " + data.region + "."));
 
-        if (data.pick) {
-            var p = data.pick;
-            modalBody.appendChild(el("div", "widget-section-label", "Tonight's pick"));
-            var card = el("div", "pick-card");
-            card.appendChild(posterThumb(p.poster, p.title, p.key));
-            var info = el("div", "pick-info");
-            var name = p.url ? el("a", "pick-title", p.title) : el("div", "pick-title", p.title);
-            if (p.url) {
-                name.href = p.url;
-                name.target = "_blank";
-                name.rel = "noopener";
-            }
-            info.appendChild(name);
-            info.appendChild(el("div", "pick-meta", [p.year, p.runtime ? p.runtime + " min" : ""].filter(Boolean).join(" · ")));
-            var pickChips = ratingChips(p.ratings);
-            if (pickChips) info.appendChild(pickChips);
-            if (p.overview) {
-                info.appendChild(el("div", "pick-overview", p.overview));
-            }
-            card.appendChild(info);
-            modalBody.appendChild(card);
-        }
+        [["arrived", "Arrived"], ["left", "Left"]].forEach(function (section) {
+            var rows = data[section[0]];
+            if (!rows.length) return;
+            modalBody.appendChild(el("div", "widget-section-label", section[1]));
+            var ol = el("ol", "track-list");
+            rows.forEach(function (r) {
+                var li = el("li", "track-row change-row");
+                li.appendChild(posterThumb(r.poster, r.title, r.key));
+                var meta = el("span", "meta");
+                meta.appendChild(el("div", "name", r.title));
+                var service = el("div", "artist change-service");
+                if (r.logo) {
+                    var img = document.createElement("img");
+                    img.src = r.logo;
+                    img.alt = "";
+                    service.appendChild(img);
+                }
+                service.appendChild(document.createTextNode((section[0] === "arrived" ? "On " : "Left ") + r.service));
+                meta.appendChild(service);
+                if (r.on_watchlist) {
+                    meta.appendChild(el("span", "change-watchlist", "On your watchlist"));
+                }
+                li.appendChild(meta);
+                li.appendChild(el("span", "count", r.date));
+                ol.appendChild(li);
+            });
+            modalBody.appendChild(ol);
+        });
+
+        modalBody.appendChild(el("div", "widget-subtext", "Checked daily, so a title shows here the day after it moves — there's no advance notice of what's leaving."));
     }
 
     // --- Period pickers (Top Shows, Top Movies, Genre Breakdown) ---
@@ -1003,8 +1040,8 @@
     // --- Poster hover card ---
     // Any poster carrying data-info-key ('s<trakt id>' for a show,
     // 'm<trakt id>' for a film) — in Top Shows / Top Movies, the Now
-    // Watching and Previously watched cards, Binge Report rows and the
-    // watchlist pick — shows an info card after a short hover. Fetched once
+    // Watching and Previously watched cards, and Binge Report and Streaming
+    // Changes rows — shows an info card after a short hover. Fetched once
     // per title per visit from details.php; mouse-only, since touch has no hover.
 
     var infoCache = {};
@@ -1019,8 +1056,33 @@
         if (info.tagline) {
             card.appendChild(el("div", "info-card-tagline", info.tagline));
         }
-        if (info.facts && info.facts.length) {
-            card.appendChild(el("div", "info-card-facts", info.facts.join(" · ")));
+        if ((info.facts && info.facts.length) || info.badge) {
+            var facts = el("div", "info-card-facts", (info.facts || []).join(" · "));
+            if (info.badge) {
+                var badge = document.createElement("img");
+                badge.className = "cert-badge";
+                badge.src = info.badge.src;
+                badge.alt = info.badge.alt;
+                badge.title = info.badge.alt;
+                facts.insertBefore(badge, facts.firstChild);
+            }
+            card.appendChild(facts);
+        }
+        // Not links: the card ignores the mouse (it'd vanish on the way to one).
+        if (info.watch && info.watch.length) {
+            var watch = el("div", "info-card-watch");
+            info.watch.forEach(function (w) {
+                var item = el("span", "info-card-watch-item");
+                if (w.logo) {
+                    var img = document.createElement("img");
+                    img.src = w.logo;
+                    img.alt = "";
+                    item.appendChild(img);
+                }
+                item.appendChild(document.createTextNode(w.name));
+                watch.appendChild(item);
+            });
+            card.appendChild(watch);
         }
         var chips = ratingChips(info.chips);
         if (chips) card.appendChild(chips);
@@ -1105,4 +1167,36 @@
         infoTarget = null;
         hideInfoCard();
     }, { passive: true });
+
+    // --- Awards chip: icon only when it would wrap ---
+    // The 🏆 chip comes last in a row of chips. If it would push onto a
+    // second line, its "6 wins" text is dropped (the tooltip still has the
+    // full breakdown). Re-checked whenever chips are added — panel and
+    // hero updates, the hover card, widget modals — and on resize.
+
+    function fitAwardChips() {
+        document.querySelectorAll(".rating-chips .rating-awards").forEach(function (chip) {
+            chip.classList.remove("compact");
+            var first = chip.parentNode.firstElementChild;
+            if (first !== chip && chip.offsetTop > first.offsetTop) {
+                chip.classList.add("compact");
+            }
+        });
+    }
+
+    var fitQueued = false;
+    function queueFitAwardChips() {
+        if (fitQueued) return;
+        fitQueued = true;
+        requestAnimationFrame(function () {
+            fitQueued = false;
+            fitAwardChips();
+        });
+    }
+
+    // childList only: toggling .compact is an attribute change, so this
+    // can't retrigger itself.
+    new MutationObserver(queueFitAwardChips).observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", queueFitAwardChips);
+    queueFitAwardChips();
 })();

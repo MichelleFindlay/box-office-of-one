@@ -5,6 +5,10 @@ require_once __DIR__ . '/Library.php';
 require_once __DIR__ . '/Posters.php';
 require_once __DIR__ . '/Plex.php';
 require_once __DIR__ . '/Ratings.php';
+require_once __DIR__ . '/Awards.php';
+require_once __DIR__ . '/Streaming.php';
+require_once __DIR__ . '/TmdbDetails.php';
+require_once __DIR__ . '/Soundtracks.php';
 require_once __DIR__ . '/Widgets.php';
 require_once __DIR__ . '/WidgetCache.php';
 require_once __DIR__ . '/WidgetRegistry.php';
@@ -29,6 +33,8 @@ class App
         'movies_default_period' => 'this_year',
         'genre_default_period'  => 'all_time',
         'tmdb_api_key'     => '',
+        'watch_region'     => '',
+        'streaming_backfill_per_run' => 150,
         'plex_url'         => '',
         'plex_token'       => '',
         'plex_user'        => '',
@@ -36,6 +42,7 @@ class App
         'mdblist_api_key'  => '',
         'mdblist_daily_limit'     => 900,
         'ratings_backfill_per_run' => 50,
+        'awards_backfill_per_run'  => 60,
         'library_backfill_pages_per_run' => 20,
         'library_rebuild_days'           => 7,
         'poster_backfill_per_run'        => 40,
@@ -52,6 +59,10 @@ class App
     public Posters $posters;
     public Plex $plex;
     public Ratings $ratings;
+    public Awards $awards;
+    public Streaming $streaming;
+    public TmdbDetails $tmdbDetails;
+    public Soundtracks $soundtracks;
     public Widgets $widgets;
     public DateTimeZone $tz;
 
@@ -64,7 +75,12 @@ class App
         $this->posters = new Posters($config);
         $this->plex = new Plex($config);
         $this->ratings = new Ratings($config);
-        $this->widgets = new Widgets($this->trakt, $this->library, $this->posters, $this->ratings, $config);
+        $this->awards = new Awards($config);
+        $this->streaming = new Streaming($config, $this->tz);
+        $this->tmdbDetails = new TmdbDetails($config, $this->streaming->regionCode());
+        $this->soundtracks = new Soundtracks();
+        $this->widgets = new Widgets($this->trakt, $this->library, $this->posters, $this->ratings, $this->awards,
+            $this->streaming, $this->tmdbDetails, $this->soundtracks, $config);
     }
 
     /**
@@ -248,6 +264,8 @@ class App
             'image'      => $poster,
             'backdrop'   => $fanart ?? $poster,
             'url'        => $url,
+            'watch'      => $this->streaming->lookup($posterType, isset($media['ids']['tmdb']) ? (int) $media['ids']['tmdb'] : null, $title, $key),
+            'soundtrack' => $this->soundtracks->lookup($key, $title, isset($media['year']) ? (int) $media['year'] : null),
             'action'     => $item['action'] ?? null, // scrobble | checkin | watch
             'started_at' => isset($item['started_at']) ? strtotime($item['started_at']) : null,
             'expires_at' => isset($item['expires_at']) ? strtotime($item['expires_at']) : null,
@@ -300,6 +318,8 @@ class App
             'image'      => $poster,
             'backdrop'   => $backdrop,
             'url'        => $url,
+            'watch'      => $this->streaming->lookup($isEpisode ? 'show' : 'movie', isset($known['tmdb']) ? (int) $known['tmdb'] : null, $title, $key),
+            'soundtrack' => $key !== null ? $this->soundtracks->lookup($key, $title, $known['y'] ?? ($year !== null ? (int) $year : null)) : null,
             'action'     => 'plex',
             'paused'     => $live && $paused,
             'progress'   => $live && $durationMs > 0 ? $offsetMs / $durationMs : null,
@@ -344,6 +364,40 @@ class App
         }
 
         return array_values(array_unique($keys));
+    }
+
+    /**
+     * Re-checks where your titles are streaming, for the Streaming
+     * Changes widget: watchlist first (an arrival there is the news worth
+     * having), then everything you've watched, heaviest-watched first —
+     * at most $max titles, each at most once a day.
+     */
+    public function refreshStreaming(int $max): int
+    {
+        if (!$this->streaming->enabled() || $max <= 0) {
+            return 0;
+        }
+
+        $titles = [];
+        foreach ($this->trakt->getWatchlist() as $item) {
+            $type = $item['type'] ?? '';
+            if (($type === 'movie' || $type === 'show') && isset($item[$type]['ids']['tmdb'])) {
+                $titles[] = [
+                    'type'  => $type,
+                    'tmdb'  => (int) $item[$type]['ids']['tmdb'],
+                    'title' => (string) ($item[$type]['title'] ?? ''),
+                    'key'   => isset($item[$type]['ids']['trakt']) ? ($type === 'movie' ? 'm' : 's') . $item[$type]['ids']['trakt'] : null,
+                ];
+            }
+        }
+        foreach ($this->library->titlesByPlays() as $key) {
+            $t = $this->library->title($key);
+            if (!empty($t['tmdb'])) {
+                $titles[] = ['type' => $key[0] === 'm' ? 'movie' : 'show', 'tmdb' => (int) $t['tmdb'], 'title' => (string) $t['t'], 'key' => $key];
+            }
+        }
+
+        return $this->streaming->refreshDue($titles, $max);
     }
 
     /**

@@ -13,7 +13,10 @@
  *      library_rebuild_days in config.php).
  *   4. Fills in a bounded batch of missing posters from TMDB (only with
  *      tmdb_api_key set), and of IMDb / Popcornmeter ratings from MDBList
- *      (only with mdblist_api_key set).
+ *      (only with mdblist_api_key set), and of award wins and nominations
+ *      from Wikidata (unless awards_backfill_per_run is 0). Re-checks where
+ *      your watchlist and history are streaming, for Streaming Changes
+ *      (only with tmdb_api_key set).
  *   5. Recomputes every widget and every period of every panel.
  *
  * Run this every 15 minutes, matching the widget cache TTL. Two ways to
@@ -96,6 +99,12 @@ $ratingCount = $step('ratings', fn() => $app->library->backfillRatings(
     max(0, (int) $config['ratings_backfill_per_run']),
     $app->onPageTitleKeys()
 ));
+$streamingCount = $step('streaming', fn() => $app->refreshStreaming(max(0, (int) $config['streaming_backfill_per_run'])));
+$awardCount = $step('awards', fn() => $app->library->backfillAwards(
+    $app->awards,
+    max(0, (int) $config['awards_backfill_per_run']),
+    $app->onPageTitleKeys()
+));
 
 foreach (WidgetRegistry::SIMPLE_IDS as $id) {
     $step($id, fn() => WidgetCache::remember($id, ['id' => $id], 900, $handlers[$id], true));
@@ -138,6 +147,12 @@ if ($posterCount) {
 }
 if ($ratingCount) {
     $summary .= sprintf(' — ratings: +%d', $ratingCount);
+}
+if ($streamingCount) {
+    $summary .= sprintf(' — streaming re-checked: %d titles', $streamingCount);
+}
+if ($awardCount) {
+    $summary .= sprintf(' — awards: %d titles', $awardCount);
 }
 
 $coverage = $app->library->coverage();

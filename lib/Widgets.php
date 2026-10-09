@@ -4,13 +4,17 @@ require_once __DIR__ . '/Trakt.php';
 require_once __DIR__ . '/Library.php';
 require_once __DIR__ . '/Posters.php';
 require_once __DIR__ . '/Ratings.php';
+require_once __DIR__ . '/Awards.php';
+require_once __DIR__ . '/Streaming.php';
+require_once __DIR__ . '/TmdbDetails.php';
+require_once __DIR__ . '/Soundtracks.php';
 
 /**
  * Computes the insight widgets (the clickable cards below the panels).
  * Almost everything here comes from the local history snapshot — see
  * lib/Library.php — so these cost no live API calls at all once it's
- * synced. The exceptions are Hot Takes (your ratings) and Watchlist Debt
- * (your watchlist), which read their own Trakt endpoints, cached an hour.
+ * synced. The exceptions are Hot Takes (your ratings), which reads its own
+ * Trakt endpoint, cached an hour, and Streaming Changes (see Streaming).
  *
  * Widgets built from the whole history still work while the backfill is
  * in progress: they use whatever's synced so far and say how far back
@@ -22,16 +26,25 @@ class Widgets
     private Library $library;
     private Posters $posters;
     private Ratings $ratings;
+    private Awards $awards;
+    private Streaming $streaming;
+    private TmdbDetails $tmdbDetails;
+    private Soundtracks $soundtracks;
     private array $config;
     private DateTimeZone $tz;
     private ?array $myRatings = null;
 
-    public function __construct(Trakt $trakt, Library $library, Posters $posters, Ratings $ratings, array $config)
+    public function __construct(Trakt $trakt, Library $library, Posters $posters, Ratings $ratings, Awards $awards,
+        Streaming $streaming, TmdbDetails $tmdbDetails, Soundtracks $soundtracks, array $config)
     {
         $this->trakt = $trakt;
         $this->library = $library;
         $this->posters = $posters;
         $this->ratings = $ratings;
+        $this->awards = $awards;
+        $this->streaming = $streaming;
+        $this->tmdbDetails = $tmdbDetails;
+        $this->soundtracks = $soundtracks;
         $this->config = $config;
         $this->tz = Trakt::resolveTimezone($config['timezone'] ?? '');
     }
@@ -167,11 +180,28 @@ class Widgets
     }
 
     /**
-     * Chips for a title: show progress first (shows only), then scores.
+     * Chips for a title: show progress first (shows only), then scores,
+     * then awards.
      */
     public function titleChips(?string $key, ?int $traktPercent = null, bool $allowLookup = false): array
     {
-        return array_merge($this->progressChips($key), $this->ratingChips($key, $traktPercent, $allowLookup));
+        // Only titles already in the library: anything else (just started,
+        // not synced yet) would be stored as award-less for a month.
+        $imdb = $key !== null ? ($this->library->title($key)['imdb'] ?? null) : null;
+        if ($allowLookup && is_string($imdb)) {
+            $this->awards->lookupNow($key, $imdb);
+        }
+        $awards = Awards::chip($this->awards->lookup($key));
+
+        return array_merge($this->progressChips($key), $this->ratingChips($key, $traktPercent, $allowLookup), $awards ? [$awards] : []);
+    }
+
+    /**
+     * A title's award wins and nominations — see Awards::lookup().
+     */
+    public function awards(?string $key): array
+    {
+        return $this->awards->lookup($key);
     }
 
     /**
@@ -218,14 +248,15 @@ class Widgets
 
     /**
      * Everything the hover card shows for a show or film: Trakt's summary
-     * (network/status or tagline/director, synopsis...), score chips, and
+     * (network/status or tagline/director, synopsis...), where it's
+     * streaming, score chips, and
      * your own history with it from the local snapshot — plus, for a show,
      * progress and the next episode due to air.
      *
      * Only titles in your history or on your watchlist are looked up, so
      * this can't be used to proxy arbitrary Trakt requests.
      *
-     * @return array{title: string, year: ?int, tagline: string, overview: string, facts: string[], genres: string[], chips: array, rows: array<int, array{label: string, value: string}>, url: ?string}|null
+     * @return array{title: string, year: ?int, tagline: string, overview: string, facts: string[], badge: ?array, watch: array, genres: string[], chips: array, rows: array<int, array{label: string, value: string}>, url: ?string}|null
      */
     public function titleInfo(string $key): ?array
     {
@@ -246,6 +277,20 @@ class Widgets
             return null;
         }
 
+        $tmdbId = isset($media['ids']['tmdb']) ? (int) $media['ids']['tmdb'] : (isset($local['tmdb']) ? (int) $local['tmdb'] : null);
+        $title = (string) ($media['title'] ?? $local['t'] ?? '');
+        // Your country's certificate (BBFC in the UK) where TMDB has it.
+        $certificate = $this->tmdbDetails->certification($isShow ? 'show' : 'movie', $tmdbId);
+        // UK ratings get the BBFC's own symbol (assets/bbfc/, public domain)
+        // instead of plain text.
+        $badge = $certificate !== null && $this->streaming->regionCode() === 'GB' && preg_match('/^(U|PG|12A|12|15|18|R18)$/', $certificate)
+            ? ['src' => 'assets/bbfc/' . $certificate . '.svg', 'alt' => 'BBFC ' . $certificate]
+            : null;
+        if ($certificate === null && !empty($media['certification'])) {
+            // Trakt's, which is the US rating — say so anywhere else.
+            $certificate = ($this->streaming->regionCode() === 'US' ? '' : 'US ') . $media['certification'];
+        }
+
         $rows = [];
         $mine = $this->myRating($key);
         if ($mine !== null) {
@@ -258,7 +303,7 @@ class Widgets
             $facts = [
                 $media['network'] ?? null,
                 $statuses[strtolower((string) ($media['status'] ?? ''))] ?? null,
-                $media['certification'] ?? null,
+                $badge === null ? $certificate : null,
                 !empty($media['runtime']) ? $media['runtime'] . ' min' : null,
                 isset($media['country']) ? strtoupper($media['country']) : null,
             ];
@@ -279,10 +324,14 @@ class Widgets
                     . (!empty($next['title']) ? ' · ' . $next['title'] : '')
                     . (!empty($next['first_aired']) ? ' — ' . $this->localTime((int) strtotime($next['first_aired']))->format('D j M Y') : '')];
             }
+            $soundtrack = $this->soundtracks->lookup($key, $title, isset($media['year']) ? (int) $media['year'] : ($local['y'] ?? null));
+            if ($soundtrack !== null) {
+                $rows[] = ['label' => 'Soundtrack', 'value' => $soundtrack['title'] . ($soundtrack['artist'] !== '' ? ' — ' . $soundtrack['artist'] : '')];
+            }
         } else {
             $released = !empty($media['released']) ? date('j M Y', (int) strtotime($media['released'])) : null;
             $facts = [
-                $media['certification'] ?? null,
+                $badge === null ? $certificate : null,
                 !empty($media['runtime']) ? Trakt::formatMinutes((int) $media['runtime']) : null,
                 $released ? 'Released ' . $released : null,
                 isset($media['country']) ? strtoupper($media['country']) : null,
@@ -299,6 +348,17 @@ class Widgets
                 $rows[] = ['label' => count($directors) > 1 ? 'Directors' : 'Director', 'value' => implode(', ', array_slice(array_unique($directors), 0, 3))];
             }
 
+            // Cinema and digital release dates in your country (else the US).
+            $releases = $this->tmdbDetails->releaseDates($tmdbId);
+            foreach (['cinema' => 'Cinema', 'digital' => 'Digital'] as $kind => $label) {
+                if (!empty($releases[$kind])) {
+                    $r = $releases[$kind];
+                    $rows[] = ['label' => $label, 'value' => $this->releaseDate($r['date'])
+                        . ($r['note'] !== '' ? ' (' . $r['note'] . ')' : '')
+                        . ($releases['country'] !== $this->streaming->regionCode() ? ' — ' . self::countryName($releases['country']) : '')];
+                }
+            }
+
             $plays = array_filter($this->library->storedPlays(), fn($p) => $p[3] === $key);
             if ($plays) {
                 $last = $this->library->lastPlay($key);
@@ -307,21 +367,94 @@ class Widgets
             } else {
                 $rows[] = ['label' => 'You watched', 'value' => 'Not yet — it\'s on your watchlist'];
             }
+
+            $soundtrack = $this->soundtracks->lookup($key, $title, isset($media['year']) ? (int) $media['year'] : ($local['y'] ?? null));
+            if ($soundtrack !== null) {
+                $rows[] = ['label' => 'Soundtrack', 'value' => $soundtrack['title'] . ($soundtrack['artist'] !== '' ? ' — ' . $soundtrack['artist'] : '')];
+            }
+
+            // "$814.6m worldwide · $175m budget (4.7×)"
+            $money = $this->tmdbDetails->boxOffice($tmdbId);
+            if ($money['revenue'] !== null || $money['budget'] !== null) {
+                $rows[] = ['label' => 'Box office', 'value' => implode(' · ', array_filter([
+                    $money['revenue'] !== null ? self::dollars($money['revenue']) . ' worldwide' : null,
+                    $money['budget'] !== null ? self::dollars($money['budget']) . ' budget'
+                        . ($money['revenue'] !== null ? ' (' . round($money['revenue'] / $money['budget'], 1) . '×)' : '') : null,
+                ]))];
+            }
+
+            // "Toy Story Collection · part 2 of 5 · 3 seen" — released films only.
+            $collection = $this->tmdbDetails->collection($tmdbId);
+            if ($collection !== null && count($collection['parts']) > 1) {
+                $watched = $this->library->watchedMovieTmdbIds();
+                $seen = count(array_filter($collection['parts'], fn($p) => isset($watched[$p['tmdb']])));
+                $position = array_search($tmdbId, array_column($collection['parts'], 'tmdb'), true);
+                $rows[] = ['label' => 'Collection', 'value' => $collection['name']
+                    . ($position !== false ? ' · part ' . ($position + 1) . ' of ' . count($collection['parts']) : '')
+                    . ' · ' . $seen . ' of ' . count($collection['parts']) . ' seen'];
+            }
+        }
+
+        // Awards: one row per ceremony, the biggest few in full.
+        $awards = $this->awards->lookup($key);
+        foreach (array_slice($awards, 0, 5) as $a) {
+            $rows[] = ['label' => '🏆 ' . $a['name'], 'value' => Awards::detail($a)];
+        }
+        if (count($awards) > 5) {
+            $rows[] = ['label' => '🏆 Also', 'value' => implode(', ', array_map(fn($a) => $a['name'] . ($a['wins'] > 0 ? ' (' . $a['wins'] . ')' : ''), array_slice($awards, 5)))];
         }
 
         $slug = $local['slug'] ?? ($media['ids']['slug'] ?? null);
 
         return [
-            'title'    => (string) ($media['title'] ?? $local['t'] ?? ''),
+            'title'    => $title,
             'year'     => $media['year'] ?? $local['y'] ?? null,
             'tagline'  => (string) ($media['tagline'] ?? ''),
             'overview' => (string) ($media['overview'] ?? ''),
             'facts'    => array_values(array_filter($facts)),
+            'badge'    => $badge,
+            'watch'    => array_map(fn($l) => ['name' => $l['name'], 'logo' => $l['logo']], $this->streaming->lookup($isShow ? 'show' : 'movie', $tmdbId, $title, $key)),
             'genres'   => array_map([Trakt::class, 'prettyGenre'], array_slice((array) ($media['genres'] ?? $local['g'] ?? []), 0, 4)),
             'chips'    => $this->titleChips($key, Library::traktPercent($media)),
             'rows'     => $rows,
             'url'      => $slug ? 'https://trakt.tv/' . ($isShow ? 'shows/' : 'movies/') . $slug : null,
         ];
+    }
+
+    /**
+     * "22 Nov 2017", or for one still to come "3 Nov 2026 (in 25 days)".
+     */
+    private function releaseDate(string $ymd): string
+    {
+        $date = new DateTime($ymd, $this->tz);
+        $today = new DateTime('today', $this->tz);
+        $text = $date->format('j M Y');
+        if ($date > $today) {
+            $days = (int) $today->diff($date)->days;
+            $text .= ' (' . ($days === 1 ? 'tomorrow' : 'in ' . $days . ' days') . ')';
+        }
+
+        return $text;
+    }
+
+    private static function countryName(string $code): string
+    {
+        return ['US' => 'US', 'GB' => 'UK'][$code] ?? $code;
+    }
+
+    /**
+     * $1.2bn, $814.6m, $11.4m, $850k
+     */
+    private static function dollars(int $amount): string
+    {
+        if ($amount >= 1e9) {
+            return '$' . rtrim(rtrim(number_format($amount / 1e9, 2), '0'), '.') . 'bn';
+        }
+        if ($amount >= 1e6) {
+            return '$' . rtrim(rtrim(number_format($amount / 1e6, 1), '0'), '.') . 'm';
+        }
+
+        return '$' . number_format(round($amount / 1e3)) . 'k';
     }
 
     private function onWatchlist(string $key): bool
@@ -667,64 +800,49 @@ class Widgets
     }
 
     /**
-     * How long it'd take to watch everything on your watchlist at your
-     * recent pace, plus a pick for tonight (stable for the day, so it
-     * doesn't reshuffle on every open).
+     * Streaming Changes: titles from your watchlist and history that
+     * arrived on or left a streaming service in the last 30 days, newest
+     * first, watchlist titles flagged. See Streaming::refreshDue().
      */
-    public function watchlistDebt(): array
+    public function streamingChanges(): array
     {
-        $items = $this->trakt->getWatchlist();
-        if (!$items) {
+        $since = time() - 30 * 86400;
+        $events = array_reverse(array_filter($this->streaming->changes(), fn($e) => $e['at'] >= $since));
+        if (!$this->streaming->enabled() || !$events) {
             return ['available' => false];
         }
 
-        $minutes = 0;
-        $movies = [];
-        $showCount = 0;
-        foreach ($items as $item) {
+        $watchlist = [];
+        foreach ($this->trakt->getWatchlist() as $item) {
             $type = $item['type'] ?? '';
-            if ($type === 'movie' && isset($item['movie'])) {
-                $minutes += (int) ($item['movie']['runtime'] ?? 0) ?: 110;
-                $movies[] = $item['movie'];
-            } elseif ($type === 'show' && isset($item['show'])) {
-                $show = $item['show'];
-                $minutes += ((int) ($show['runtime'] ?? 0) ?: 40) * max(1, (int) ($show['aired_episodes'] ?? 1));
-                $showCount++;
+            if (($type === 'movie' || $type === 'show') && isset($item[$type]['ids']['trakt'])) {
+                $watchlist[($type === 'movie' ? 'm' : 's') . $item[$type]['ids']['trakt']] = true;
             }
         }
 
-        // Pace: average minutes a day over the last 90 days of history —
-        // unknown (null), not zero, while those 90 days are still syncing.
-        $since = (new DateTime('today', $this->tz))->modify('-90 days')->getTimestamp();
-        $recent = $this->library->summary($since);
-        $perDay = $recent !== null ? $recent['minutes'] / 90 : null;
-
-        $pick = null;
-        if ($movies) {
-            $seed = crc32((new DateTime('today', $this->tz))->format('Y-m-d'));
-            $m = $movies[$seed % count($movies)];
-            $poster = Trakt::imageUrl($m, 'poster')
-                ?? $this->posters->lookup('movie', $m['ids']['tmdb'] ?? null)['poster'];
-            $pick = [
-                'key'      => isset($m['ids']['trakt']) ? 'm' . $m['ids']['trakt'] : null,
-                'ratings'  => $this->ratingChips(isset($m['ids']['trakt']) ? 'm' . $m['ids']['trakt'] : null, Library::traktPercent($m), true),
-                'title'    => $m['title'] ?? '?',
-                'year'     => $m['year'] ?? null,
-                'runtime'  => (int) ($m['runtime'] ?? 0),
-                'overview' => $m['overview'] ?? '',
-                'poster'   => $poster,
-                'url'      => isset($m['ids']['slug']) ? 'https://trakt.tv/movies/' . $m['ids']['slug'] : null,
+        $rows = ['arrived' => [], 'left' => []];
+        foreach ($events as $e) {
+            $key = $e['key'] ?? null;
+            if (!isset($rows[$e['kind']]) || count($rows[$e['kind']]) >= 20) {
+                continue; // 20 of each is plenty
+            }
+            $rows[$e['kind']][] = [
+                'key'          => $key,
+                'title'        => $e['title'],
+                'type'         => $e['type'],
+                'service'      => $e['name'],
+                'logo'         => $e['logo'],
+                'date'         => $this->localTime($e['at'])->format('j M'),
+                'on_watchlist' => $key !== null && isset($watchlist[$key]),
+                'poster'       => ($key !== null ? $this->posterFor($key) : null) ?? $this->posters->lookup($e['type'], $e['tmdb'])['poster'],
             ];
         }
 
         return [
-            'total_items'   => count($items),
-            'movies'        => count($movies),
-            'shows'         => $showCount,
-            'hours'         => (int) round($minutes / 60),
-            'per_day_min'   => $perDay !== null ? (int) round($perDay) : null,
-            'days_to_clear' => $perDay ? (int) ceil($minutes / $perDay) : null,
-            'pick'          => $pick,
+            'available' => true,
+            'region'    => $this->streaming->regionCode(),
+            'arrived'   => $rows['arrived'],
+            'left'      => $rows['left'],
         ];
     }
 

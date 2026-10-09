@@ -13,7 +13,7 @@ class WidgetRegistry
      */
     public const SIMPLE_IDS = [
         'watch_clock', 'week_rhythm', 'time_watched', 'binge',
-        'decades', 'streaks', 'hot_takes', 'watchlist',
+        'decades', 'streaks', 'hot_takes', 'streaming_changes',
     ];
 
     /**
@@ -31,7 +31,7 @@ class WidgetRegistry
             'decades'      => fn() => $widgets->decades(),
             'streaks'      => fn() => $widgets->streaks(),
             'hot_takes'    => fn() => $widgets->hotTakes(),
-            'watchlist'    => fn() => $widgets->watchlistDebt(),
+            'streaming_changes' => fn() => $widgets->streamingChanges(),
 
             // Period-picker panels. Read their params from $_GET, matching
             // how widgets.php's on-demand requests are shaped (cron.php

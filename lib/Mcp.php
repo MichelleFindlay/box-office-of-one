@@ -17,7 +17,7 @@ class Mcp
         'decades'      => 'Distinct movies watched, grouped by decade of release, with median release year and oldest film.',
         'streaks'      => 'Longest and current streak of consecutive days with something watched, plus a year-long daily calendar of minutes watched.',
         'hot_takes'    => 'Your rating distribution and the titles where your rating differs most from the Trakt community average.',
-        'watchlist'    => 'Watchlist size, total hours to clear it, days to clear at your recent pace, and a pick for tonight.',
+        'streaming_changes' => 'Titles from your watchlist and history that arrived on or left a streaming service (Netflix, Disney+, iPlayer...) in the last 30 days, in your country.',
     ];
 
     private App $app;
@@ -166,6 +166,7 @@ class Mcp
                     $name === 'top_movies' ? 'plays' : 'episodes' => $r['plays'],
                     'hours'        => round($r['minutes'] / 60, 1),
                     'ratings'      => array_column($this->app->widgets->ratingChips($r['key']), 'value', 'kind'),
+                    'awards'       => array_map(fn($a) => ['ceremony' => $a['name'], 'wins' => $a['wins'], 'nominations' => $a['noms'], 'won' => $a['won']], $this->app->widgets->awards($r['key'])),
                     'your_rating'  => $r['mine'] ?? null,
                     'community_score' => $r['community'] ?? null,
                     'progress'     => $name === 'top_shows' ? $this->app->library->showProgress($r['key']) : null,

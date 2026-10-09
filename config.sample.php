@@ -52,6 +52,17 @@ return [
     // Get one at https://www.themoviedb.org/settings/api
     'tmdb_api_key' => '',
 
+    // Country whose streaming services are linked beside "View on Trakt"
+    // (only those the title's on, by subscription or free — needs
+    // tmdb_api_key). Two-letter code, e.g. 'GB' or 'US'. Blank = the
+    // country of your timezone above.
+    'watch_region' => '',
+
+    // Titles whose streaming availability cron.php re-checks per run, for
+    // the Streaming Changes widget (watchlist first, then your history;
+    // each at most once a day). 0 turns the re-checks off.
+    'streaming_backfill_per_run' => 150,
+
     // Optional: read "Now Watching" straight from your Plex server instead
     // of relying on a live Trakt scrobbler — real playback position, and
     // stays up while paused. Falls back to Trakt whenever nothing's playing
@@ -82,6 +93,12 @@ return [
     'mdblist_api_key'          => '',
     'mdblist_daily_limit'      => 999,
     'ratings_backfill_per_run' => 50,
+
+    // Award wins and nominations (Oscars, Globes, BAFTAs, Emmys, Cannes and
+    // the rest — see lib/Awards.php) next to each title, from Wikidata. Free
+    // and needs no key. cron.php looks up this many titles per run, 20 to a
+    // request, each refreshed monthly. 0 turns awards off.
+    'awards_backfill_per_run' => 60,
 
     // Local history snapshot (see lib/Library.php). cron.php pulls this many
     // pages of history (100 plays/page) per run while backfilling, so a
