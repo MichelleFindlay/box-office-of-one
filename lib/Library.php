@@ -548,6 +548,23 @@ class Library
     }
 
     /**
+     * TMDB IDs of every film in your history, as keys.
+     *
+     * @return array<int, true>
+     */
+    public function watchedMovieTmdbIds(): array
+    {
+        $ids = [];
+        foreach ($this->load()['titles'] as $key => $t) {
+            if ($key[0] === 'm' && !empty($t['tmdb'])) {
+                $ids[(int) $t['tmdb']] = true;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
      * Runtime to credit a play with: its own (episode) runtime, else the
      * title's, else a typical default — Trakt occasionally has none.
      */
@@ -878,7 +895,7 @@ class Library
      *
      * @return string[]
      */
-    private function titlesByPlays(): array
+    public function titlesByPlays(): array
     {
         $counts = [];
         foreach ($this->load()['plays'] as $p) {

@@ -28,16 +28,22 @@ built the same way: plain PHP, no database, flat-file caching.
   tiebreaker. For films you haven't rated, the community score stands in
   for your rating. Genres are weighted by minutes watched, so one film
   doesn't count the same as a 60-episode binge.
-- **Poster hover cards**: rest the mouse on any poster for an info card.
-  For a show it has the network, status, synopsis, your progress, the last
+- **Poster hover cards**: rest the mouse on any poster for an info card. For
+  a show it has the network, status, synopsis, your progress, the last
   episode you watched, and when the next one airs. For a film it has the
-  tagline, certification, runtime, release date, director, synopsis, and
-  how often and when you watched it. Both include where it's streaming,
-  your rating, the
-  score chips and any major awards. Details load on first hover and are
-  cached.
+  tagline, certificate, runtime, release date, director, synopsis, how often
+  and when you watched it, when it reached cinemas and digital in your
+  country, its box office (worldwide gross and budget, from TMDB), and where it sits in its collection ("Toy Story Collection · part 2
+  of 5 · 3 of 5 seen"). Both list the soundtrack album, if there is one.
+  Certificates are your country's (BBFC in the UK, shown as the BBFC's own
+  symbols) where TMDB has them. Both include where it's streaming, your
+  rating, the score chips and any major awards. Details load on first hover
+  and are cached.
 - **Where to stream**: beside "View on Trakt", a link for each streaming
-  service the title is on right now. See below.
+  service the title is on right now, plus a **Soundtrack** link for a show
+  or film that has one. See below.
+- **Streaming Changes** widget: titles from your watchlist and history
+  that arrived on or left a streaming service in the last 30 days.
 - **Awards**: a 🏆 chip on each title with its wins (or nominations) at
   the major film and TV awards and festivals, from Wikidata. See below.
 - **Lifetime Stats**: movies, shows, episodes, time spent on each, total
@@ -58,8 +64,8 @@ built the same way: plain PHP, no database, flat-file caching.
     GitHub-style calendar of the past year
   - **Hot Takes**: your rating distribution, and the titles where your
     rating is furthest from the Trakt community's
-  - **Watchlist Debt**: how many hours your watchlist holds, how long it'd
-    take to clear at your recent pace, and a pick for tonight
+  - **Streaming Changes**: titles from your watchlist and history that
+    arrived on or left a streaming service in the last 30 days
 
   Plays logged in bulk ("mark season as watched", imports) share one
   timestamp, which is when they were logged, not when you watched them.
@@ -304,6 +310,33 @@ opens that service's search for the title instead (Netflix, Prime Video,
 HBO Max, Apple TV, YouTube, Tubi, iPlayer, My5, NOW). For services whose
 search can't be linked to, it opens TMDB's "where to watch" page for the
 title, which links into each one. Availability is cached for a day.
+
+### Streaming Changes
+
+`cron.php` re-checks where your watchlist and history are streaming
+(`streaming_backfill_per_run` titles per run, default 150, each at most
+once a day, watchlist first) and logs every service a title gains or
+loses. The Streaming Changes widget shows the last 30 days, flagging
+anything on your watchlist. No free source says what's *about* to leave
+a service, so departures show the day after they happen. A title only
+starts being tracked from its first check, so give it a day or two after
+setup.
+
+## Soundtracks
+
+A show's or film's soundtrack album comes from
+[MusicBrainz](https://musicbrainz.org) (free, no key): an album typed as a
+soundtrack, or titled like one, whose title starts with the show's or
+film's ("Succession: Season 1", "Oppenheimer: Original Motion Picture
+Soundtrack") and that came out no earlier than the year before the show
+began. Films are matched more strictly, since short titles like "Up" or
+"Parasite" start plenty of unrelated album names: the album has to come
+out within a year of the film, and its title has to carry on with
+punctuation (": Original Score"), not more words ("Up in the Air"). That
+misses some (an album called "Barbie The Album", say) but avoids wrong
+matches. The Now Watching card links to it as a
+Spotify search, and the poster hover card names it. Looked up when first
+needed and cached for a month.
 
 ## Posters
 

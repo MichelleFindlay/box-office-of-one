@@ -58,6 +58,11 @@ return [
     // country of your timezone above.
     'watch_region' => '',
 
+    // Titles whose streaming availability cron.php re-checks per run, for
+    // the Streaming Changes widget (watchlist first, then your history;
+    // each at most once a day). 0 turns the re-checks off.
+    'streaming_backfill_per_run' => 150,
+
     // Optional: read "Now Watching" straight from your Plex server instead
     // of relying on a live Trakt scrobbler — real playback position, and
     // stays up while paused. Falls back to Trakt whenever nothing's playing
