@@ -217,6 +217,7 @@ body {
 
 .listen-links {
     display: flex;
+    flex-wrap: wrap;
     gap: 10px;
     margin-top: 14px;
 }
@@ -238,6 +239,19 @@ body {
 .listen-link:hover {
     background: rgba(255, 255, 255, 0.16);
     transform: translateY(-1px);
+}
+
+/* Streaming services the title's on, beside "View on Trakt" */
+
+.watch-links {
+    display: contents;
+}
+
+.watch-link img {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    flex: none;
 }
 
 .prev-track {
@@ -652,6 +666,27 @@ body {
     color: var(--accent);
     transition: color var(--color-transition);
     flex: none;
+}
+
+.powered-by-line {
+    margin-top: 6px;
+    color: var(--fg-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.powered-by-line a {
+    display: inline-flex;
+    opacity: 0.75;
+    transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.powered-by-line a:hover {
+    opacity: 1;
+    transform: translateY(-1px);
 }
 
 .version-line {
@@ -1233,6 +1268,17 @@ a.pick-title:hover {
     margin-bottom: 8px;
 }
 
+/* Awards chip: titles with nominations but no wins are dimmer */
+
+.rating-awards.rating-noms {
+    color: var(--fg-dim);
+}
+
+/* Set by fitAwardChips() in app.js when the chip would wrap to a new row */
+.rating-awards.compact .rating-value {
+    display: none;
+}
+
 /* Show progress chip: episodes watched vs. aired */
 
 .rating-progress .rating-label {
@@ -1282,6 +1328,26 @@ a.pick-title:hover {
 .info-card-genres {
     color: var(--fg-dim);
     margin-top: 3px;
+}
+
+.info-card-watch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin-top: 6px;
+}
+
+.info-card-watch-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 600;
+}
+
+.info-card-watch-item img {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
 }
 
 .info-card .rating-chips {

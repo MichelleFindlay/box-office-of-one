@@ -5,6 +5,8 @@ require_once __DIR__ . '/Library.php';
 require_once __DIR__ . '/Posters.php';
 require_once __DIR__ . '/Plex.php';
 require_once __DIR__ . '/Ratings.php';
+require_once __DIR__ . '/Awards.php';
+require_once __DIR__ . '/Streaming.php';
 require_once __DIR__ . '/Widgets.php';
 require_once __DIR__ . '/WidgetCache.php';
 require_once __DIR__ . '/WidgetRegistry.php';
@@ -29,6 +31,7 @@ class App
         'movies_default_period' => 'this_year',
         'genre_default_period'  => 'all_time',
         'tmdb_api_key'     => '',
+        'watch_region'     => '',
         'plex_url'         => '',
         'plex_token'       => '',
         'plex_user'        => '',
@@ -36,6 +39,7 @@ class App
         'mdblist_api_key'  => '',
         'mdblist_daily_limit'     => 900,
         'ratings_backfill_per_run' => 50,
+        'awards_backfill_per_run'  => 60,
         'library_backfill_pages_per_run' => 20,
         'library_rebuild_days'           => 7,
         'poster_backfill_per_run'        => 40,
@@ -52,6 +56,8 @@ class App
     public Posters $posters;
     public Plex $plex;
     public Ratings $ratings;
+    public Awards $awards;
+    public Streaming $streaming;
     public Widgets $widgets;
     public DateTimeZone $tz;
 
@@ -64,7 +70,9 @@ class App
         $this->posters = new Posters($config);
         $this->plex = new Plex($config);
         $this->ratings = new Ratings($config);
-        $this->widgets = new Widgets($this->trakt, $this->library, $this->posters, $this->ratings, $config);
+        $this->awards = new Awards($config);
+        $this->streaming = new Streaming($config, $this->tz);
+        $this->widgets = new Widgets($this->trakt, $this->library, $this->posters, $this->ratings, $this->awards, $this->streaming, $config);
     }
 
     /**
@@ -248,6 +256,7 @@ class App
             'image'      => $poster,
             'backdrop'   => $fanart ?? $poster,
             'url'        => $url,
+            'watch'      => $this->streaming->lookup($posterType, isset($media['ids']['tmdb']) ? (int) $media['ids']['tmdb'] : null, $title),
             'action'     => $item['action'] ?? null, // scrobble | checkin | watch
             'started_at' => isset($item['started_at']) ? strtotime($item['started_at']) : null,
             'expires_at' => isset($item['expires_at']) ? strtotime($item['expires_at']) : null,
@@ -300,6 +309,7 @@ class App
             'image'      => $poster,
             'backdrop'   => $backdrop,
             'url'        => $url,
+            'watch'      => $this->streaming->lookup($isEpisode ? 'show' : 'movie', isset($known['tmdb']) ? (int) $known['tmdb'] : null, $title),
             'action'     => 'plex',
             'paused'     => $live && $paused,
             'progress'   => $live && $durationMs > 0 ? $offsetMs / $durationMs : null,

@@ -32,8 +32,14 @@ built the same way: plain PHP, no database, flat-file caching.
   For a show it has the network, status, synopsis, your progress, the last
   episode you watched, and when the next one airs. For a film it has the
   tagline, certification, runtime, release date, director, synopsis, and
-  how often and when you watched it. Both include your rating and the
-  score chips. Details load on first hover and are cached.
+  how often and when you watched it. Both include where it's streaming,
+  your rating, the
+  score chips and any major awards. Details load on first hover and are
+  cached.
+- **Where to stream**: beside "View on Trakt", a link for each streaming
+  service the title is on right now. See below.
+- **Awards**: a 🏆 chip on each title with its wins (or nominations) at
+  the major film and TV awards and festivals, from Wikidata. See below.
 - **Lifetime Stats**: movies, shows, episodes, time spent on each, total
   days, ratings given, and how far back your history goes. These come from
   Trakt's own totals when it shares them. Otherwise they're worked out from
@@ -248,6 +254,56 @@ scores keep being shown. A cron run gives up after 3 failed requests rather
 than waiting on a timeout for every title. Trakt data that changes slowly
 (your ratings, watchlist, profile, show details) and TMDB posters fall back
 to their last saved copy the same way.
+
+## Awards
+
+Titles that have won (or been nominated for) a major award get a **🏆**
+chip next to their scores, e.g. "🏆 6 wins". Hover over it for the full
+list, or over the poster for a breakdown by ceremony with the categories
+won. The data comes from [Wikidata](https://www.wikidata.org), matched on
+each title's IMDb ID. It's free and needs no key.
+
+Counted:
+
+- **Film**: Academy Awards, Golden Globes, BAFTA Film Awards, SAG (now
+  the Actor Awards), Critics' Choice, Independent Spirit Awards
+- **Festivals**: Cannes, Venice, Berlin, Sundance, Toronto (TIFF)
+- **International and guild**: César, Goya, European Film Awards, DGA,
+  WGA, PGA, Annie Awards, Saturn Awards
+- **TV**: Primetime and Creative Arts Emmys, BAFTA TV and BAFTA TV Craft,
+  International Emmys, Peabody Awards, National Television Awards,
+  TV Choice Awards, Royal Television Society Awards (plus the Globes,
+  Critics' Choice and SAG TV categories above)
+
+Awards given to a person for a title (Best Actress, say) count towards
+that title. Wikidata's coverage is excellent for the Oscars, Globes, BAFTAs
+and Emmys but patchier for festival sidebars and the UK TV awards, so a
+few smaller wins may be missing. Wikidata only sometimes marks an Emmy
+category as Creative Arts, so many of those are counted under Emmys.
+
+`cron.php` looks up `awards_backfill_per_run` titles per run (default 60,
+20 per request): titles on the page first, then the rest, heaviest-watched
+first. Each is refreshed monthly. Set it to `0` to turn awards off.
+
+## Where to stream
+
+With `tmdb_api_key` set, the Now Watching card links to every streaming
+service the title is available on in your country (and poster hover cards
+list them under the release date), by subscription or
+free with ads (not rent or buy). It uses TMDB's watch-provider data, which
+comes from JustWatch. The country is `watch_region` (e.g. `'GB'`), or
+your timezone's country if that's blank.
+
+Services linked: Netflix, Prime Video, Disney+, HBO Max, Paramount+
+(SkyShowtime in parts of Europe), Apple TV, Peacock, YouTube, Tubi, Pluto
+TV, The Roku Channel, BBC iPlayer, ITVX, Channel 4, My5, NOW, Sky Go and
+BritBox. Anything else TMDB lists is left out.
+
+TMDB doesn't give a link straight to the title on each service, so a link
+opens that service's search for the title instead (Netflix, Prime Video,
+HBO Max, Apple TV, YouTube, Tubi, iPlayer, My5, NOW). For services whose
+search can't be linked to, it opens TMDB's "where to watch" page for the
+title, which links into each one. Availability is cached for a day.
 
 ## Posters
 

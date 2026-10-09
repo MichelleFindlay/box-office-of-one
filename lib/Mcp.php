@@ -166,6 +166,7 @@ class Mcp
                     $name === 'top_movies' ? 'plays' : 'episodes' => $r['plays'],
                     'hours'        => round($r['minutes'] / 60, 1),
                     'ratings'      => array_column($this->app->widgets->ratingChips($r['key']), 'value', 'kind'),
+                    'awards'       => array_map(fn($a) => ['ceremony' => $a['name'], 'wins' => $a['wins'], 'nominations' => $a['noms'], 'won' => $a['won']], $this->app->widgets->awards($r['key'])),
                     'your_rating'  => $r['mine'] ?? null,
                     'community_score' => $r['community'] ?? null,
                     'progress'     => $name === 'top_shows' ? $this->app->library->showProgress($r['key']) : null,

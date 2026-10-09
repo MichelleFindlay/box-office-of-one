@@ -4,6 +4,8 @@ require_once __DIR__ . '/Trakt.php';
 require_once __DIR__ . '/Library.php';
 require_once __DIR__ . '/Posters.php';
 require_once __DIR__ . '/Ratings.php';
+require_once __DIR__ . '/Awards.php';
+require_once __DIR__ . '/Streaming.php';
 
 /**
  * Computes the insight widgets (the clickable cards below the panels).
@@ -22,16 +24,20 @@ class Widgets
     private Library $library;
     private Posters $posters;
     private Ratings $ratings;
+    private Awards $awards;
+    private Streaming $streaming;
     private array $config;
     private DateTimeZone $tz;
     private ?array $myRatings = null;
 
-    public function __construct(Trakt $trakt, Library $library, Posters $posters, Ratings $ratings, array $config)
+    public function __construct(Trakt $trakt, Library $library, Posters $posters, Ratings $ratings, Awards $awards, Streaming $streaming, array $config)
     {
         $this->trakt = $trakt;
         $this->library = $library;
         $this->posters = $posters;
         $this->ratings = $ratings;
+        $this->awards = $awards;
+        $this->streaming = $streaming;
         $this->config = $config;
         $this->tz = Trakt::resolveTimezone($config['timezone'] ?? '');
     }
@@ -167,11 +173,28 @@ class Widgets
     }
 
     /**
-     * Chips for a title: show progress first (shows only), then scores.
+     * Chips for a title: show progress first (shows only), then scores,
+     * then awards.
      */
     public function titleChips(?string $key, ?int $traktPercent = null, bool $allowLookup = false): array
     {
-        return array_merge($this->progressChips($key), $this->ratingChips($key, $traktPercent, $allowLookup));
+        // Only titles already in the library: anything else (just started,
+        // not synced yet) would be stored as award-less for a month.
+        $imdb = $key !== null ? ($this->library->title($key)['imdb'] ?? null) : null;
+        if ($allowLookup && is_string($imdb)) {
+            $this->awards->lookupNow($key, $imdb);
+        }
+        $awards = Awards::chip($this->awards->lookup($key));
+
+        return array_merge($this->progressChips($key), $this->ratingChips($key, $traktPercent, $allowLookup), $awards ? [$awards] : []);
+    }
+
+    /**
+     * A title's award wins and nominations — see Awards::lookup().
+     */
+    public function awards(?string $key): array
+    {
+        return $this->awards->lookup($key);
     }
 
     /**
@@ -218,14 +241,15 @@ class Widgets
 
     /**
      * Everything the hover card shows for a show or film: Trakt's summary
-     * (network/status or tagline/director, synopsis...), score chips, and
+     * (network/status or tagline/director, synopsis...), where it's
+     * streaming, score chips, and
      * your own history with it from the local snapshot — plus, for a show,
      * progress and the next episode due to air.
      *
      * Only titles in your history or on your watchlist are looked up, so
      * this can't be used to proxy arbitrary Trakt requests.
      *
-     * @return array{title: string, year: ?int, tagline: string, overview: string, facts: string[], genres: string[], chips: array, rows: array<int, array{label: string, value: string}>, url: ?string}|null
+     * @return array{title: string, year: ?int, tagline: string, overview: string, facts: string[], watch: array, genres: string[], chips: array, rows: array<int, array{label: string, value: string}>, url: ?string}|null
      */
     public function titleInfo(string $key): ?array
     {
@@ -309,6 +333,15 @@ class Widgets
             }
         }
 
+        // Awards: one row per ceremony, the biggest few in full.
+        $awards = $this->awards->lookup($key);
+        foreach (array_slice($awards, 0, 5) as $a) {
+            $rows[] = ['label' => '🏆 ' . $a['name'], 'value' => Awards::detail($a)];
+        }
+        if (count($awards) > 5) {
+            $rows[] = ['label' => '🏆 Also', 'value' => implode(', ', array_map(fn($a) => $a['name'] . ($a['wins'] > 0 ? ' (' . $a['wins'] . ')' : ''), array_slice($awards, 5)))];
+        }
+
         $slug = $local['slug'] ?? ($media['ids']['slug'] ?? null);
 
         return [
@@ -317,6 +350,11 @@ class Widgets
             'tagline'  => (string) ($media['tagline'] ?? ''),
             'overview' => (string) ($media['overview'] ?? ''),
             'facts'    => array_values(array_filter($facts)),
+            'watch'    => array_map(fn($l) => ['name' => $l['name'], 'logo' => $l['logo']], $this->streaming->lookup(
+                $isShow ? 'show' : 'movie',
+                isset($media['ids']['tmdb']) ? (int) $media['ids']['tmdb'] : (isset($local['tmdb']) ? (int) $local['tmdb'] : null),
+                (string) ($media['title'] ?? $local['t'] ?? '')
+            )),
             'genres'   => array_map([Trakt::class, 'prettyGenre'], array_slice((array) ($media['genres'] ?? $local['g'] ?? []), 0, 4)),
             'chips'    => $this->titleChips($key, Library::traktPercent($media)),
             'rows'     => $rows,

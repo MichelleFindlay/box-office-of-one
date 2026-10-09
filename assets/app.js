@@ -20,6 +20,7 @@
         bgA: document.querySelector("[data-bg-a]"),
         bgB: document.querySelector("[data-bg-b]"),
         traktLink: document.querySelector("[data-trakt-link]"),
+        watchLinks: document.querySelector("[data-watch-links]"),
         progress: document.querySelector("[data-watch-progress]"),
         progressFill: document.querySelector("[data-watch-progress-fill]"),
         progressLabel: document.querySelector("[data-watch-progress-label]"),
@@ -365,6 +366,13 @@
             }
         }
 
+        if (els.watchLinks) {
+            els.watchLinks.innerHTML = "";
+            (item.watch || []).forEach(function (l) {
+                els.watchLinks.appendChild(watchLink(l));
+            });
+        }
+
         if (item.backdrop) {
             updateBackground(item.backdrop);
         } else {
@@ -637,6 +645,23 @@
         modalBody.appendChild(el("div", "widget-subtext", "Bars show how far into the next one you are. " + (data.source_note || "")));
     }
 
+    // Same markup as renderWatchLinks() in index.php.
+    function watchLink(l) {
+        var a = el("a", "listen-link watch-link");
+        a.href = l.url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.title = "Watch on " + l.name;
+        if (l.logo) {
+            var img = document.createElement("img");
+            img.src = l.logo;
+            img.alt = "";
+            a.appendChild(img);
+        }
+        a.appendChild(el("span", null, l.name));
+        return a;
+    }
+
     // Same markup as renderRatingChips() in index.php.
     function ratingChips(chips) {
         if (!chips || !chips.length) {
@@ -647,7 +672,7 @@
             var chip = el("span", "rating-chip rating-" + c.kind);
             chip.title = c.title;
             chip.appendChild(el("span", "rating-label", c.label));
-            chip.appendChild(document.createTextNode(" " + c.value));
+            chip.appendChild(el("span", "rating-value", c.value));
             wrap.appendChild(chip);
         });
         return wrap;
@@ -1022,6 +1047,22 @@
         if (info.facts && info.facts.length) {
             card.appendChild(el("div", "info-card-facts", info.facts.join(" · ")));
         }
+        // Not links: the card ignores the mouse (it'd vanish on the way to one).
+        if (info.watch && info.watch.length) {
+            var watch = el("div", "info-card-watch");
+            info.watch.forEach(function (w) {
+                var item = el("span", "info-card-watch-item");
+                if (w.logo) {
+                    var img = document.createElement("img");
+                    img.src = w.logo;
+                    img.alt = "";
+                    item.appendChild(img);
+                }
+                item.appendChild(document.createTextNode(w.name));
+                watch.appendChild(item);
+            });
+            card.appendChild(watch);
+        }
         var chips = ratingChips(info.chips);
         if (chips) card.appendChild(chips);
         if (info.genres && info.genres.length) {
@@ -1105,4 +1146,36 @@
         infoTarget = null;
         hideInfoCard();
     }, { passive: true });
+
+    // --- Awards chip: icon only when it would wrap ---
+    // The 🏆 chip comes last in a row of chips. If it would push onto a
+    // second line, its "6 wins" text is dropped (the tooltip still has the
+    // full breakdown). Re-checked whenever chips are added — panel and
+    // hero updates, the hover card, widget modals — and on resize.
+
+    function fitAwardChips() {
+        document.querySelectorAll(".rating-chips .rating-awards").forEach(function (chip) {
+            chip.classList.remove("compact");
+            var first = chip.parentNode.firstElementChild;
+            if (first !== chip && chip.offsetTop > first.offsetTop) {
+                chip.classList.add("compact");
+            }
+        });
+    }
+
+    var fitQueued = false;
+    function queueFitAwardChips() {
+        if (fitQueued) return;
+        fitQueued = true;
+        requestAnimationFrame(function () {
+            fitQueued = false;
+            fitAwardChips();
+        });
+    }
+
+    // childList only: toggling .compact is an attribute change, so this
+    // can't retrigger itself.
+    new MutationObserver(queueFitAwardChips).observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", queueFitAwardChips);
+    queueFitAwardChips();
 })();

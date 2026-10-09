@@ -34,6 +34,28 @@ const ICONS = [
     'bookmark'       => '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>',
 ];
 
+/**
+ * Logos for the footer's "Powered by" row: brand icons from Simple Icons
+ * (CC0, simpleicons.org), plus JustWatch's play-triangle mark redrawn, as
+ * it isn't in that set. 24×24 paths, inlined like ICONS above.
+ */
+const BRAND_LOGOS = [
+    'trakt' => ['#9F42C6', 'm15.082 15.107-.73-.73 9.578-9.583a4.499 4.499 0 0 0-.115-.575L13.662 14.382l1.08 1.08-.73.73-1.81-1.81L23.422 3.144c-.075-.15-.155-.3-.25-.44L11.508 14.377l2.154 2.155-.73.73-7.193-7.199.73-.73 4.309 4.31L22.546 1.86A5.618 5.618 0 0 0 18.362 0H5.635A5.637 5.637 0 0 0 0 5.634V18.37A5.632 5.632 0 0 0 5.635 24h12.732C21.477 24 24 21.48 24 18.37V6.19l-8.913 8.918zm-4.314-2.155L6.814 8.988l.73-.73 3.954 3.96zm1.075-1.084-3.954-3.96.73-.73 3.959 3.96zm9.853 5.688a4.141 4.141 0 0 1-4.14 4.14H6.438a4.144 4.144 0 0 1-4.139-4.14V6.438A4.141 4.141 0 0 1 6.44 2.3h10.387v1.04H6.438c-1.71 0-3.099 1.39-3.099 3.1V17.55c0 1.71 1.39 3.105 3.1 3.105h11.117c1.71 0 3.1-1.395 3.1-3.105v-1.754h1.04v1.754z'],
+    'plex' => ['#EBAF00', 'M3.987 8.409c-.96 0-1.587.28-2.12.933v-.72H0v8.88s.038.018.127.037c.138.03.821.187 1.331-.249.441-.377.542-.814.542-1.318v-1.283c.533.573 1.147.813 2 .813 1.84 0 3.253-1.493 3.253-3.48 0-2.12-1.36-3.613-3.266-3.613Zm16.748 5.595.406.591c.391.614.894.906 1.492.908.621-.012 1.064-.562 1.226-.755 0 0-.307-.27-.686-.72-.517-.614-1.214-1.755-1.24-1.803l-1.198 1.779Zm-3.205-1.955c0-2.08-1.52-3.64-3.52-3.64s-3.467 1.587-3.467 3.573a3.48 3.48 0 0 0 3.507 3.52c1.413 0 2.626-.84 3.253-2.293h-2.04l-.093.093c-.427.4-.72.533-1.227.533-.787 0-1.373-.506-1.453-1.266h4.986c.04-.214.054-.307.054-.52Zm-7.671-.219c0 .769.11 1.701.868 2.722l.056.069c-.306.526-.742.88-1.248.88-.399 0-.814-.211-1.138-.579a2.177 2.177 0 0 1-.538-1.441V6.409H9.86l-.001 5.421Zm9.283 3.46h-2.39l2.247-3.332-2.247-3.335h2.39l2.248 3.335-2.248 3.332Zm1.593-1.286Zm-17.162-.342c-.933 0-1.68-.773-1.68-1.72s.76-1.666 1.68-1.666c.92 0 1.68.733 1.68 1.68 0 .946-.733 1.706-1.68 1.706Zm18.361-1.974L24 8.622h-2.391l-.87 1.293 1.195 1.773Zm-9.404-.466c.16-.706.72-1.133 1.493-1.133.773 0 1.373.467 1.507 1.133h-3Z'],
+    'tmdb' => ['#01B4E4', 'M6.62 12a2.291 2.291 0 0 1 2.292-2.295h-.013A2.291 2.291 0 0 1 11.189 12a2.291 2.291 0 0 1-2.29 2.291h.013A2.291 2.291 0 0 1 6.62 12zm10.72-4.062h4.266a2.291 2.291 0 0 0 2.29-2.291 2.291 2.291 0 0 0-2.29-2.296H17.34a2.291 2.291 0 0 0-2.291 2.296 2.291 2.291 0 0 0 2.29 2.29zM2.688 20.645h8.285a2.291 2.291 0 0 0 2.291-2.292 2.291 2.291 0 0 0-2.29-2.295H2.687a2.291 2.291 0 0 0-2.291 2.295 2.291 2.291 0 0 0 2.29 2.292zm10.881-6.354h.81l1.894-4.586H15.19l-1.154 3.008h-.013l-1.135-3.008h-1.154zm4.208 0h1.011V9.705h-1.011zm2.878 0h3.235v-.93h-2.223v-.933h1.99v-.934h-1.99v-.855h2.107v-.934h-3.112zM1.31 7.941h1.01V4.247h1.31v-.895H0v.895h1.31zm3.747 0h1.011V5.959h1.958v1.984h1.011v-4.59h-1.01v1.711H6.061V3.351H5.057zm5.348 0h3.242v-.933H11.41v-.934h1.99v-.933h-1.99v-.856h2.107v-.934h-3.112zM.162 14.296h1.005v-3.52h.013l1.167 3.52h.765l1.206-3.52h.013v3.52h1.011v-4.59H3.82L2.755 12.7h-.013L1.686 9.705H.156zm14.534 6.353h1.641a3.188 3.188 0 0 0 .98-.149 2.531 2.531 0 0 0 .824-.437 2.123 2.123 0 0 0 .567-.713 2.193 2.193 0 0 0 .223-.983 2.399 2.399 0 0 0-.218-1.07 1.958 1.958 0 0 0-.586-.716 2.405 2.405 0 0 0-.873-.392 4.349 4.349 0 0 0-1.046-.13h-1.519zm1.013-3.656h.596a2.26 2.26 0 0 1 .606.08 1.514 1.514 0 0 1 .503.244 1.167 1.167 0 0 1 .34.412 1.28 1.28 0 0 1 .13.587 1.546 1.546 0 0 1-.13.658 1.127 1.127 0 0 1-.347.433 1.41 1.41 0 0 1-.518.238 2.797 2.797 0 0 1-.649.07h-.538zm4.686 3.656h1.88a2.997 2.997 0 0 0 .613-.064 1.735 1.735 0 0 0 .554-.214 1.221 1.221 0 0 0 .402-.39 1.105 1.105 0 0 0 .155-.606 1.188 1.188 0 0 0-.071-.415 1.01 1.01 0 0 0-.204-.34 1.087 1.087 0 0 0-.317-.24 1.297 1.297 0 0 0-.413-.13v-.012a1.203 1.203 0 0 0 .575-.366.962.962 0 0 0 .216-.648 1.081 1.081 0 0 0-.149-.603 1.022 1.022 0 0 0-.389-.354 1.673 1.673 0 0 0-.54-.169 4.463 4.463 0 0 0-.6-.041h-1.712zm1.011-3.734h.687a1.4 1.4 0 0 1 .24.022.748.748 0 0 1 .22.075.432.432 0 0 1 .16.147.418.418 0 0 1 .061.236.47.47 0 0 1-.055.233.433.433 0 0 1-.146.156.62.62 0 0 1-.204.084 1.058 1.058 0 0 1-.23.026h-.745zm0 1.835h.765a1.96 1.96 0 0 1 .266.02 1.015 1.015 0 0 1 .26.07.519.519 0 0 1 .204.152.406.406 0 0 1 .08.26.481.481 0 0 1-.06.253.519.519 0 0 1-.16.168.62.62 0 0 1-.217.09 1.155 1.155 0 0 1-.237.027H21.4z'],
+    'justwatch' => ['#FBC500', 'M3.00 3.10v4.00l3.90-2.00zM3.00 7.70v4.00l3.90-2.00zM3.00 12.30v4.00l3.90-2.00zM3.00 16.90v4.00l3.90-2.00zM7.40 5.40v4.00l3.90-2.00zM7.40 10.00v4.00l3.90-2.00zM7.40 14.60v4.00l3.90-2.00zM11.80 7.70v4.00l3.90-2.00zM11.80 12.30v4.00l3.90-2.00zM16.20 10.00v4.00l3.90-2.00z'],
+    'mdblist' => ['#4284CA', 'M1.928.029A2.47 2.47 0 0 0 .093 1.673c-.085.248-.09.629-.09 10.33s.005 10.08.09 10.33a2.51 2.51 0 0 0 1.512 1.558l.276.108h20.237l.277-.108a2.51 2.51 0 0 0 1.512-1.559c.085-.25.09-.63.09-10.33s-.005-10.08-.09-10.33A2.51 2.51 0 0 0 22.395.115l-.277-.109L12.117 0C6.615-.004 2.032.011 1.929.029m7.48 8.067 2.123 2.004v1.54c0 .897-.02 1.536-.043 1.527s-.92-.845-1.995-1.86c-1.071-1.01-1.962-1.84-1.977-1.84s-.024 1.91-.024 4.248v4.25H4.911V6.085h1.188l1.183.006zm9.729 3.93v5.94h-2.63l-.01-4.25-.013-4.25-1.907 1.795a367 367 0 0 1-1.98 1.864c-.076.056-.08-.047-.08-1.489v-1.555l2.127-1.995 2.122-1.995 1.187-.005h1.184z'],
+    'wikidata' => ['#339966', 'M0 4.583v14.833h.865V4.583zm1.788 0v14.833h2.653V4.583zm3.518 0v14.832H7.96V4.583zm3.547 0v14.834h.866V4.583zm1.789 0v14.833h.865V4.583zm1.759 0v14.834h2.653V4.583zm3.518 0v14.834h.923V4.583zm1.788 0v14.833h2.653V4.583zm3.64 0v14.834h.865V4.583zm1.788 0v14.834H24V4.583Z'],
+];
+
+function renderBrandLogo(string $name): string
+{
+    [$color, $path] = BRAND_LOGOS[$name];
+
+    return '<svg class="powered-by-logo" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'
+        . '<path fill="' . $color . '" d="' . $path . '"/></svg>';
+}
+
 function renderIcon(string $name, string $class): string
 {
     if (!isset(ICONS[$name])) {
@@ -69,10 +91,26 @@ function renderRatingChips(array $chips, string $extraClass = ''): string
     $html = '<span class="rating-chips' . ($extraClass !== '' ? ' ' . e($extraClass) : '') . '">';
     foreach ($chips as $c) {
         $html .= '<span class="rating-chip rating-' . e($c['kind']) . '" title="' . e($c['title']) . '">'
-            . '<span class="rating-label">' . e($c['label']) . '</span> ' . e($c['value']) . '</span>';
+            . '<span class="rating-label">' . e($c['label']) . '</span><span class="rating-value">' . e($c['value']) . '</span></span>';
     }
 
     return $html . '</span>';
+}
+
+/**
+ * Streaming service links beside "View on Trakt" — same markup as
+ * watchLinks() in assets/app.js.
+ */
+function renderWatchLinks(array $links): string
+{
+    $html = '';
+    foreach ($links as $l) {
+        $html .= '<a class="listen-link watch-link" href="' . e($l['url']) . '" target="_blank" rel="noopener" title="Watch on ' . e($l['name']) . '">'
+            . ($l['logo'] ? '<img src="' . e($l['logo']) . '" alt="" loading="lazy">' : '')
+            . '<span>' . e($l['name']) . '</span></a>';
+    }
+
+    return $html;
 }
 
 /**
@@ -147,6 +185,7 @@ if (!$needsSetup) {
             $app->library->syncRecent();
             $app->library->backfillBatch(3);
             $app->library->backfillRatings($app->ratings, 5, $app->onPageTitleKeys());
+            $app->library->backfillAwards($app->awards, Awards::batchSize(), $app->onPageTitleKeys());
         } catch (Throwable $e) {
             // Non-fatal: the page still renders from whatever's stored.
         }
@@ -273,6 +312,7 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
                     <?= renderIcon('tv', 'listen-link-icon') ?>
                     <span>View on Trakt</span>
                 </a>
+                <span class="watch-links" data-watch-links><?= renderWatchLinks($current['watch'] ?? []) ?></span>
             </div>
         </div>
         <?php $prevInitial = strtoupper(mb_substr($previous['title'] ?? '?', 0, 1)); ?>
@@ -404,6 +444,26 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
                     <?= renderIcon('tv', 'lastfm-icon') ?>
                     <span><?= e($config['username']) ?> on Trakt</span>
                 </a>
+            </div>
+        <?php endif; ?>
+        <?php
+        // Only the services this install actually uses. TMDB and JustWatch
+        // both ask for credit wherever their data is shown.
+        $poweredBy = array_filter([
+            ['trakt', 'Trakt', 'https://trakt.tv', 'Watch history, ratings and show details'],
+            $config['plex_token'] !== '' ? ['plex', 'Plex', 'https://www.plex.tv', 'Now Watching'] : null,
+            $config['tmdb_api_key'] !== '' ? ['tmdb', 'TMDB', 'https://www.themoviedb.org', 'Posters and where to stream. This product uses the TMDB API but is not endorsed or certified by TMDB.'] : null,
+            $config['tmdb_api_key'] !== '' ? ['justwatch', 'JustWatch', 'https://www.justwatch.com', 'Streaming availability, via TMDB'] : null,
+            $config['mdblist_api_key'] !== '' ? ['mdblist', 'MDBList', 'https://mdblist.com', 'IMDb and Rotten Tomatoes scores'] : null,
+            (int) $config['awards_backfill_per_run'] > 0 ? ['wikidata', 'Wikidata', 'https://www.wikidata.org', 'Awards'] : null,
+        ]);
+        ?>
+        <?php if ($poweredBy): ?>
+            <div class="powered-by-line">
+                Powered by
+                <?php foreach ($poweredBy as [$logo, $name, $url, $what]): ?>
+                    <a href="<?= e($url) ?>" target="_blank" rel="noopener" title="<?= e($name . ' — ' . $what) ?>" aria-label="<?= e($name) ?>"><?= renderBrandLogo($logo) ?></a>
+                <?php endforeach; ?>
             </div>
         <?php endif; ?>
         <div class="version-line">

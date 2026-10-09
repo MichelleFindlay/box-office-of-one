@@ -840,6 +840,40 @@ class Library
     }
 
     /**
+     * Keeps award wins and nominations (from Wikidata) filled in and up to
+     * date the same way: titles never looked up first, then those over a
+     * month old, $priorityKeys ahead of the rest. Titles go to Wikidata a
+     * batch per query, so $max titles costs only a few requests.
+     *
+     * @param string[] $priorityKeys
+     * @return int titles looked up
+     */
+    public function backfillAwards(Awards $awards, int $max, array $priorityKeys = []): int
+    {
+        if (!$awards->enabled()) {
+            return 0;
+        }
+
+        $titles = $this->load()['titles'];
+        $order = array_filter(array_unique(array_merge($priorityKeys, $this->titlesByPlays())), fn($k) => isset($titles[$k]));
+        $due = array_merge(
+            array_filter($order, fn($k) => !$awards->has($k)),
+            array_filter($order, fn($k) => $awards->has($k) && !$awards->isFresh($k))
+        );
+
+        $done = 0;
+        foreach (array_chunk(array_slice($due, 0, $max), Awards::batchSize()) as $batch) {
+            $status = $awards->refresh(array_combine($batch, array_map(fn($k) => $titles[$k]['imdb'] ?? null, $batch)));
+            if ($status !== 'ok') {
+                break; // rate-limited or unreachable — next run carries on
+            }
+            $done += count($batch);
+        }
+
+        return $done;
+    }
+
+    /**
      * Title keys ordered by how many times they've been played, most first.
      *
      * @return string[]
