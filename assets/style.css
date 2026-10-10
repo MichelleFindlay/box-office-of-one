@@ -867,6 +867,22 @@ body {
     background: rgba(255, 255, 255, 0.16);
 }
 
+/* Trailer player: a wider modal holding a 16:9 video */
+
+.modal-video .modal {
+    max-width: 960px;
+    padding: 44px 16px 16px;
+}
+
+.trailer-frame {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border: 0;
+    border-radius: 12px;
+    background: #000;
+}
+
 .widget-loading,
 .widget-empty {
     color: var(--fg-dim);

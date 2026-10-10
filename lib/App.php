@@ -266,6 +266,8 @@ class App
             'url'        => $url,
             'watch'      => $this->streaming->lookup($posterType, isset($media['ids']['tmdb']) ? (int) $media['ids']['tmdb'] : null, $title, $key),
             'soundtrack' => $this->soundtracks->lookup($key, $title, isset($media['year']) ? (int) $media['year'] : null),
+            'trailer'    => $this->tmdbDetails->trailer($posterType, isset($media['ids']['tmdb']) ? (int) $media['ids']['tmdb'] : null)
+                ?? self::youtubeId($media['trailer'] ?? null),
             'action'     => $item['action'] ?? null, // scrobble | checkin | watch
             'started_at' => isset($item['started_at']) ? strtotime($item['started_at']) : null,
             'expires_at' => isset($item['expires_at']) ? strtotime($item['expires_at']) : null,
@@ -320,6 +322,7 @@ class App
             'url'        => $url,
             'watch'      => $this->streaming->lookup($isEpisode ? 'show' : 'movie', isset($known['tmdb']) ? (int) $known['tmdb'] : null, $title, $key),
             'soundtrack' => $key !== null ? $this->soundtracks->lookup($key, $title, $known['y'] ?? ($year !== null ? (int) $year : null)) : null,
+            'trailer'    => $this->tmdbDetails->trailer($isEpisode ? 'show' : 'movie', isset($known['tmdb']) ? (int) $known['tmdb'] : null),
             'action'     => 'plex',
             'paused'     => $live && $paused,
             'progress'   => $live && $durationMs > 0 ? $offsetMs / $durationMs : null,
@@ -364,6 +367,15 @@ class App
         }
 
         return array_values(array_unique($keys));
+    }
+
+    /**
+     * The video ID from a YouTube URL (Trakt gives trailers as
+     * "https://youtube.com/watch?v=..."), or null.
+     */
+    private static function youtubeId(?string $url): ?string
+    {
+        return $url !== null && preg_match('~(?:youtube\.com/(?:watch\?(?:.*&)?v=|embed/)|youtu\.be/)([\w-]{11})~', $url, $m) ? $m[1] : null;
     }
 
     /**

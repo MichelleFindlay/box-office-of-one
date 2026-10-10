@@ -8,7 +8,8 @@ require_once __DIR__ . '/Http.php';
  * the US one — and, for a film, the collection it's part of ("Toy Story
  * Collection") with every film in it, so the card can say how many you've
  * seen, its box office (budget and worldwide gross, in US dollars), and
- * when it reached cinemas and digital in your country.
+ * when it reached cinemas and digital in your country. Also each title's
+ * YouTube trailer, for the Now Watching card's Trailer button.
  *
  * Titles cached a week, collections a week; a stored copy is served
  * whenever TMDB can't be reached.
@@ -43,6 +44,16 @@ class TmdbDetails
         $details = $this->details($type, $tmdbId);
 
         return $details['cert'][$this->region] ?? null;
+    }
+
+    /**
+     * The YouTube video ID of a film's or show's trailer: official
+     * trailers first, then teasers, newest first — for a show, that's
+     * usually the latest season's. Null if TMDB has none on YouTube.
+     */
+    public function trailer(string $type, ?int $tmdbId): ?string
+    {
+        return $this->details($type, $tmdbId)['trailer'] ?? null;
     }
 
     /**
@@ -115,7 +126,7 @@ class TmdbDetails
     }
 
     /**
-     * @return array{cert: array<string, string>, releases: array, collection: ?int, budget: int, revenue: int}|null
+     * @return array{cert: array<string, string>, releases: array, trailer: ?string, collection: ?int, budget: int, revenue: int}|null
      */
     private function details(string $type, ?int $tmdbId): ?array
     {
@@ -126,9 +137,9 @@ class TmdbDetails
         $isMovie = $type === 'movie';
 
         return $this->cached(
-            ($isMovie ? 'movie3_' : 'tv_') . $tmdbId, // movie3: since box office and release dates were added
+            ($isMovie ? 'movie4_' : 'tv2_') . $tmdbId, // bumped whenever a field is added (most recently, trailers)
             ($isMovie ? '/movie/' : '/tv/') . $tmdbId,
-            ['append_to_response' => $isMovie ? 'release_dates' : 'content_ratings'],
+            ['append_to_response' => ($isMovie ? 'release_dates' : 'content_ratings') . ',videos'],
             fn(array $data) => self::parseDetails($data, $isMovie)
         );
     }
@@ -176,10 +187,21 @@ class TmdbDetails
         return [
             'cert'       => $certs,
             'releases'   => $dates,
+            'trailer'    => self::pickTrailer((array) ($data['videos']['results'] ?? [])),
             'collection' => isset($data['belongs_to_collection']['id']) ? (int) $data['belongs_to_collection']['id'] : null,
             'budget'     => (int) ($data['budget'] ?? 0),
             'revenue'    => (int) ($data['revenue'] ?? 0),
         ];
+    }
+
+    private static function pickTrailer(array $videos): ?string
+    {
+        $videos = array_filter($videos, fn($v) => ($v['site'] ?? '') === 'YouTube' && !empty($v['key'])
+            && in_array($v['type'] ?? '', ['Trailer', 'Teaser'], true));
+        usort($videos, fn($a, $b) => [($a['type'] === 'Trailer' ? 0 : 1), empty($a['official']) ? 1 : 0, $b['published_at'] ?? '']
+            <=> [($b['type'] === 'Trailer' ? 0 : 1), empty($b['official']) ? 1 : 0, $a['published_at'] ?? '']);
+
+        return $videos ? (string) $videos[0]['key'] : null;
     }
 
     /**

@@ -40,8 +40,9 @@ built the same way: plain PHP, no database, flat-file caching.
   rating, the score chips and any major awards. Details load on first hover
   and are cached.
 - **Where to stream**: beside "View on Trakt", a link for each streaming
-  service the title is on right now, plus a **Soundtrack** link for a show
-  or film that has one. See below.
+  service the title is on right now, plus a **Trailer** button that plays
+  the trailer on the page (from TMDB, or Trakt) and a **Soundtrack** link
+  for a show or film that has one. See below.
 - **Streaming Changes** widget: titles from your watchlist and history
   that arrived on or left a streaming service in the last 30 days.
 - **Awards**: a 🏆 chip on each title with its wins (or nominations) at

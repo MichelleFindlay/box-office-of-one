@@ -22,6 +22,7 @@
         traktLink: document.querySelector("[data-trakt-link]"),
         watchLinks: document.querySelector("[data-watch-links]"),
         soundtrackLink: document.querySelector("[data-soundtrack-link]"),
+        trailerLink: document.querySelector("[data-trailer-link]"),
         progress: document.querySelector("[data-watch-progress]"),
         progressFill: document.querySelector("[data-watch-progress-fill]"),
         progressLabel: document.querySelector("[data-watch-progress-label]"),
@@ -367,6 +368,12 @@
             }
         }
 
+        if (els.trailerLink) {
+            els.trailerLink.setAttribute("data-trailer", item.trailer || "");
+            els.trailerLink.href = item.trailer ? "https://www.youtube.com/watch?v=" + item.trailer : "";
+            els.trailerLink.style.display = item.trailer ? "" : "none";
+        }
+
         if (els.soundtrackLink) {
             if (item.soundtrack) {
                 els.soundtrackLink.href = item.soundtrack.url;
@@ -494,6 +501,27 @@
     function closeModal() {
         if (!modalOverlay) return;
         modalOverlay.hidden = true;
+        if (modalOverlay.classList.contains("modal-video")) {
+            modalOverlay.classList.remove("modal-video");
+            modalBody.innerHTML = ""; // removing the player is what stops it
+        }
+    }
+
+    // Plays a YouTube trailer in the modal, so it can be watched without
+    // leaving the page. Uses YouTube's privacy-enhanced (no-cookie) player.
+    function openTrailer(videoId, title) {
+        if (!modalBody) return false;
+        modalBody.innerHTML = "";
+        var frame = document.createElement("iframe");
+        frame.className = "trailer-frame";
+        frame.src = "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(videoId) + "?autoplay=1&rel=0";
+        frame.title = (title ? title + " — " : "") + "Trailer";
+        frame.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+        frame.allowFullscreen = true;
+        modalBody.appendChild(frame);
+        modalOverlay.classList.add("modal-video");
+        openModal();
+        return true;
     }
 
     function loadWidget(id) {
@@ -1023,6 +1051,18 @@
 
     if (modalClose) {
         modalClose.addEventListener("click", closeModal);
+    }
+
+    // The link itself goes to YouTube, for a middle-click / new tab or if
+    // there's no modal; a plain click plays it on the page instead.
+    if (els.trailerLink) {
+        els.trailerLink.addEventListener("click", function (evt) {
+            var id = els.trailerLink.getAttribute("data-trailer");
+            if (!id || evt.ctrlKey || evt.metaKey || evt.shiftKey || evt.button !== 0) return;
+            if (openTrailer(id, els.name ? els.name.textContent : "")) {
+                evt.preventDefault();
+            }
+        });
     }
     if (modalOverlay) {
         modalOverlay.addEventListener("click", function (evt) {
