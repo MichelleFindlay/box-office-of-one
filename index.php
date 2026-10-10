@@ -32,6 +32,7 @@ const ICONS = [
     'history'        => '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
     'calendar-check' => '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/>',
     'arrow-right-left' => '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
+    'play'           => '<polygon points="6 3 20 12 6 21 6 3"/>',
     'music'          => '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
 ];
 
@@ -313,6 +314,12 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
                    style="<?= empty($current['url']) ? 'display:none' : '' ?>">
                     <?= renderIcon('tv', 'listen-link-icon') ?>
                     <span>View on Trakt</span>
+                </a>
+                <a class="listen-link" data-trailer-link href="<?= !empty($current['trailer']) ? 'https://www.youtube.com/watch?v=' . e($current['trailer']) : '' ?>"
+                   data-trailer="<?= e($current['trailer'] ?? '') ?>" target="_blank" rel="noopener"
+                   style="<?= empty($current['trailer']) ? 'display:none' : '' ?>">
+                    <?= renderIcon('play', 'listen-link-icon') ?>
+                    <span>Trailer</span>
                 </a>
                 <a class="listen-link" data-soundtrack-link href="<?= e($current['soundtrack']['url'] ?? '') ?>" target="_blank" rel="noopener"
                    title="<?= e(isset($current['soundtrack']) ? $current['soundtrack']['title'] . ' — ' . $current['soundtrack']['artist'] : '') ?>"
