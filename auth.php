@@ -22,6 +22,8 @@
 
 require __DIR__ . '/lib/App.php';
 
+SecurityHeaders::send(true);
+
 $config = App::loadConfig();
 $isCli = PHP_SAPI === 'cli';
 

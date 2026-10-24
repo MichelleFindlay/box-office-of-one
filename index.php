@@ -5,6 +5,8 @@ if (function_exists('set_time_limit')) {
 }
 
 require __DIR__ . '/lib/App.php';
+
+SecurityHeaders::send(true);
 require __DIR__ . '/lib/VersionCheck.php';
 
 function e($value): string
@@ -32,6 +34,8 @@ const ICONS = [
     'history'        => '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
     'calendar-check' => '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/><path d="m9 16 2 2 4-4"/>',
     'arrow-right-left' => '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
+    'check'          => '<path d="M20 6 9 17l-5-5"/>',
+    'x'              => '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
     'play'           => '<polygon points="6 3 20 12 6 21 6 3"/>',
     'music'          => '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
 ];
@@ -135,8 +139,8 @@ function renderTitleListMarkup(?array $rows, string $emptyMessage): void
     foreach ($rows as $r) {
         $initial = strtoupper(mb_substr($r['name'] ?? '?', 0, 1));
         $thumb = $r['art']
-            ? '<img src="' . e($r['art']) . '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'\';">'
-                . '<span class="thumb-fallback" style="display:none">' . e($initial) . '</span>'
+            ? '<img src="' . e($r['art']) . '" alt="" loading="lazy">'
+                . '<span class="thumb-fallback" hidden>' . e($initial) . '</span>'
             : e($initial);
         $name = $r['url']
             ? '<a href="' . e($r['url']) . '" target="_blank" rel="noopener">' . e($r['name']) . '</a>'
@@ -148,7 +152,7 @@ function renderTitleListMarkup(?array $rows, string $emptyMessage): void
             . '<span class="meta"><div class="name">' . $name . '</div><div class="artist">' . e($r['sub']) . '</div>'
             . renderRatingChips($r['ratings'] ?? []) . '</span>'
             . '<span class="count">' . e($r['count'])
-            . ($r['pct'] !== null ? '<div class="bar"><div class="bar-fill" style="width: ' . (int) $r['pct'] . '%"></div></div>' : '')
+            . ($r['pct'] !== null ? '<div class="bar"><div class="bar-fill" data-width="' . (int) $r['pct'] . '"></div></div>' : '')
             . '</span>'
             . '</li>';
     }
@@ -223,6 +227,22 @@ if (!$needsSetup) {
     }
 
     $coverage = $app->library->coverage();
+
+    // Footer DNSSEC / security-headers ticks (see lib/SiteChecks.php).
+    // Without cron.php, a page load runs the daily check — except the
+    // check's own fetch of this page, which would otherwise loop.
+    $siteUrl = SiteChecks::currentUrl();
+    if ($siteUrl !== null) {
+        $app->siteChecks->remember($siteUrl);
+        if (empty($config['cron_enabled']) && !isset($_SERVER['HTTP_X_BOX_OFFICE_SELF_CHECK'])) {
+            try {
+                $app->siteChecks->refreshIfDue();
+            } catch (Throwable $e) {
+                // Non-fatal: the ticks just wait for the next try.
+            }
+        }
+        $siteCheck = $app->siteChecks->results();
+    }
 }
 
 $widgetDefs = [
@@ -291,9 +311,9 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
     <section class="now-playing">
         <div class="art-tile art-tile-poster" data-art-tile<?= !empty($current['info_key']) ? ' data-info-key="' . e($current['info_key']) . '"' : '' ?>>
             <span class="art-tile-fallback" data-art-fallback
-                  style="<?= empty($current['image']) ? '' : 'display:none' ?>"><?= e($heroInitial) ?></span>
+                  <?= empty($current['image']) ? '' : 'hidden' ?>><?= e($heroInitial) ?></span>
             <img data-art-img src="<?= e($current['image'] ?? '') ?>" alt="Poster"
-                 style="<?= empty($current['image']) ? 'display:none' : '' ?>">
+                 <?= empty($current['image']) ? 'hidden' : '' ?>>
         </div>
         <div class="info">
             <div class="status-badge<?= !empty($current['live']) ? ' live' : '' ?>" data-status-badge>
@@ -305,25 +325,25 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
             <p class="track-artist" data-track-artist><?= e($current['subtitle'] ?? '') ?></p>
             <p class="track-album" data-track-album><?= e($current['meta'] ?? '') ?></p>
             <div class="hero-ratings" data-hero-ratings><?= renderRatingChips($current['ratings'] ?? []) ?></div>
-            <div class="watch-progress" data-watch-progress style="<?= !empty($current['live']) ? '' : 'display:none' ?>">
+            <div class="watch-progress" data-watch-progress <?= !empty($current['live']) ? '' : 'hidden' ?>>
                 <div class="watch-progress-bar"><div class="watch-progress-fill" data-watch-progress-fill></div></div>
                 <span class="watch-progress-label" data-watch-progress-label></span>
             </div>
             <div class="listen-links">
                 <a class="listen-link" data-trakt-link href="<?= e($current['url'] ?? '') ?>" target="_blank" rel="noopener"
-                   style="<?= empty($current['url']) ? 'display:none' : '' ?>">
+                   <?= empty($current['url']) ? 'hidden' : '' ?>>
                     <?= renderIcon('tv', 'listen-link-icon') ?>
                     <span>View on Trakt</span>
                 </a>
                 <a class="listen-link" data-trailer-link href="<?= !empty($current['trailer']) ? 'https://www.youtube.com/watch?v=' . e($current['trailer']) : '' ?>"
                    data-trailer="<?= e($current['trailer'] ?? '') ?>" target="_blank" rel="noopener"
-                   style="<?= empty($current['trailer']) ? 'display:none' : '' ?>">
+                   <?= empty($current['trailer']) ? 'hidden' : '' ?>>
                     <?= renderIcon('play', 'listen-link-icon') ?>
                     <span>Trailer</span>
                 </a>
                 <a class="listen-link" data-soundtrack-link href="<?= e($current['soundtrack']['url'] ?? '') ?>" target="_blank" rel="noopener"
                    title="<?= e(isset($current['soundtrack']) ? $current['soundtrack']['title'] . ' — ' . $current['soundtrack']['artist'] : '') ?>"
-                   style="<?= empty($current['soundtrack']) ? 'display:none' : '' ?>">
+                   <?= empty($current['soundtrack']) ? 'hidden' : '' ?>>
                     <?= renderIcon('music', 'listen-link-icon') ?>
                     <span>Soundtrack</span>
                 </a>
@@ -331,12 +351,12 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
             </div>
         </div>
         <?php $prevInitial = strtoupper(mb_substr($previous['title'] ?? '?', 0, 1)); ?>
-        <div class="prev-track" data-prev-track style="<?= $previous ? '' : 'display:none' ?>">
+        <div class="prev-track" data-prev-track <?= $previous ? '' : 'hidden' ?>>
             <div class="prev-track-thumb prev-track-thumb-poster" data-prev-thumb<?= !empty($previous['info_key']) ? ' data-info-key="' . e($previous['info_key']) . '"' : '' ?>>
                 <span class="prev-track-thumb-fallback" data-prev-art-fallback
-                      style="<?= empty($previous['image']) ? '' : 'display:none' ?>"><?= e($prevInitial) ?></span>
+                      <?= empty($previous['image']) ? '' : 'hidden' ?>><?= e($prevInitial) ?></span>
                 <img data-prev-art-img src="<?= e($previous['image'] ?? '') ?>" alt=""
-                     style="<?= empty($previous['image']) ? 'display:none' : '' ?>">
+                     <?= empty($previous['image']) ? 'hidden' : '' ?>>
             </div>
             <div class="prev-track-info">
                 <div class="prev-track-label">Previously watched</div>
@@ -399,14 +419,14 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
             <?php else: ?>
                 <div class="genre-bar">
                     <?php foreach ($genres as $i => $g): ?>
-                        <div class="genre-segment" style="width: <?= $g['pct'] ?>%; background: hsl(<?= fmod($i * 137.508, 360) ?>, 65%, 55%)"
+                        <div class="genre-segment" data-width="<?= $g['pct'] ?>" data-genre-index="<?= $i ?>"
                              title="<?= e($g['name'] . ' — ' . $g['pct'] . '%') ?>"></div>
                     <?php endforeach; ?>
                 </div>
                 <ul class="genre-legend">
                     <?php foreach ($genres as $i => $g): ?>
                         <li class="genre-legend-item" data-pct="<?= $g['pct'] ?>">
-                            <span class="genre-swatch" style="background: hsl(<?= fmod($i * 137.508, 360) ?>, 65%, 55%)"></span>
+                            <span class="genre-swatch" data-genre-index="<?= $i ?>"></span>
                             <span class="genre-name"><?= e($g['name']) ?></span>
                             <span class="genre-pct"><?= $g['pct'] ?>%</span>
                         </li>
@@ -482,6 +502,27 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
+        <?php if (!empty($siteCheck)):
+            // ✓ passed, ✗ failed, nothing yet if it hasn't been checked.
+            $checks = [
+                ['🔐 DNSSEC', 'https://dnssec-debugger.verisignlabs.com/' . rawurlencode($siteCheck['host']), $siteCheck['dnssec'],
+                    $siteCheck['dnssec'] ? 'Signed and validating — open Verisign\'s DNSSEC Debugger' : 'Not DNSSEC-validated — open Verisign\'s DNSSEC Debugger'],
+                ['🛡️ Security headers', 'https://securityheaders.com/?q=' . rawurlencode($siteCheck['url']) . '&followRedirects=on', $siteCheck['headers'],
+                    $siteCheck['headers'] ? 'All security headers present, strict Content-Security-Policy — open securityheaders.com'
+                        : implode('; ', $siteCheck['problems']) . ' — open securityheaders.com'],
+            ];
+        ?>
+            <div class="site-checks-line">
+                <?php foreach ($checks as [$label, $url, $ok, $title]): ?>
+                    <a href="<?= e($url) ?>" target="_blank" rel="noopener" title="<?= e($ok === null ? 'Not checked yet' : $title) ?>">
+                        <?= e($label) ?>
+                        <?php if ($ok !== null): ?>
+                            <?= renderIcon($ok ? 'check' : 'x', 'site-check-icon ' . ($ok ? 'site-check-ok' : 'site-check-fail')) ?>
+                        <?php endif; ?>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
         <div class="version-line">
             <?php if (!empty($config['github_repo'])): ?>
                 <a class="version-gh-link" href="https://github.com/<?= e($config['github_repo']) ?>" target="_blank" rel="noopener">
@@ -513,10 +554,11 @@ $profileUrl = $config['username'] !== '' && !$needsSetup ? 'https://trakt.tv/use
     </footer>
 </div>
 
-<script>
-window.APP_CONFIG = { pollIntervalMs: <?= (int) $config['poll_interval_ms'] ?>, syncingMessage: <?= json_encode(SYNCING_MESSAGE) ?> };
-window.INITIAL_ITEM = <?= json_encode($current) ?>;
-</script>
+<?php // Data for app.js — a JSON block, not a script, so the CSP needs no 'unsafe-inline' (see lib/SecurityHeaders.php). ?>
+<script type="application/json" id="app-data"><?= json_encode([
+    'config'  => ['pollIntervalMs' => (int) $config['poll_interval_ms'], 'syncingMessage' => SYNCING_MESSAGE],
+    'current' => $current,
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>
 <script src="assets/app.js?v=<?= (int) @filemtime(__DIR__ . '/assets/app.js') ?>"></script>
 </body>
 </html>

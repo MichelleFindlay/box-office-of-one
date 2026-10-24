@@ -10,6 +10,8 @@
 
 require __DIR__ . '/lib/App.php';
 
+SecurityHeaders::send(false);
+
 $config = App::loadConfig();
 $path = (string) ($_GET['path'] ?? '');
 $sizes = ['poster' => [342, 513], 'backdrop' => [1280, 720]];

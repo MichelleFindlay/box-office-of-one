@@ -1,11 +1,21 @@
 (function () {
     "use strict";
 
-    var config = window.APP_CONFIG || { pollIntervalMs: 15000 };
+    // index.php's data, from a JSON block rather than an inline script
+    // so the Content-Security-Policy can ban inline scripts outright.
+    var pageData = {};
+    try {
+        var dataEl = document.getElementById("app-data");
+        pageData = dataEl ? JSON.parse(dataEl.textContent) || {} : {};
+    } catch (err) {
+        pageData = {};
+    }
+
+    var config = pageData.config || { pollIntervalMs: 15000 };
     var lastImage = null;
     var activeLayer = "a";
     var lastCheckTime = Date.now();
-    var currentItem = window.INITIAL_ITEM || null;
+    var currentItem = pageData.current || null;
 
     var els = {
         artTile: document.querySelector("[data-art-tile]"),
@@ -41,6 +51,25 @@
         }
     }
 
+    // --- Page setup the CSP leaves to this script ---
+    // No inline styles are allowed either, so index.php marks up its
+    // initial state as attributes and this applies them:
+    //  - hidden: shown and hidden from here on with style.display, so
+    //    swap the one for the other (the modal keeps its hidden attribute,
+    //    which openModal()/closeModal() toggle directly)
+    //  - data-width: a bar's width, in percent
+    //  - data-genre-index: which genre colour a segment or swatch gets
+    document.querySelectorAll("[hidden]:not([data-modal-overlay])").forEach(function (node) {
+        node.style.display = "none";
+        node.hidden = false;
+    });
+    document.querySelectorAll("[data-width]").forEach(function (node) {
+        node.style.width = node.getAttribute("data-width") + "%";
+    });
+    document.querySelectorAll("[data-genre-index]").forEach(function (node) {
+        node.style.background = genreColor(Number(node.getAttribute("data-genre-index")));
+    });
+
     // A poster URL can still 404 (a since-replaced image on Trakt's or
     // TMDB's CDN) — fall back to the letter placeholder whenever a load
     // actually fails rather than showing a broken image.
@@ -56,6 +85,23 @@
 
     fallBackToLetterOnError(els.artImg, els.artFallback);
     fallBackToLetterOnError(els.prevArtImg, els.prevArtFallback);
+
+    // Top Shows / Top Movies posters as first rendered (later ones come
+    // from posterThumb(), which handles this itself). One that already
+    // failed before this script ran won't fire "error" again, so check.
+    [[els.artImg, els.artFallback], [els.prevArtImg, els.prevArtFallback]]
+        .concat(Array.prototype.map.call(document.querySelectorAll(".thumb-poster img"), function (img) {
+            return [img, img.nextElementSibling];
+        }))
+        .forEach(function (pair) {
+            var img = pair[0], fallback = pair[1];
+            if (!img || !fallback) return;
+            if (img.closest(".thumb-poster")) fallBackToLetterOnError(img, fallback);
+            if (img.getAttribute("src") && img.complete && img.naturalWidth === 0) {
+                img.style.display = "none";
+                fallback.style.display = "";
+            }
+        });
 
     function setArt(imgEl, fallbackEl, url) {
         if (!imgEl) {
@@ -517,7 +563,6 @@
         frame.src = "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(videoId) + "?autoplay=1&rel=0";
         frame.title = (title ? title + " — " : "") + "Trailer";
         frame.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
-        frame.allowFullscreen = true;
         modalBody.appendChild(frame);
         modalOverlay.classList.add("modal-video");
         openModal();

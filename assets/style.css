@@ -717,6 +717,45 @@ body {
     transform: translateY(-1px);
 }
 
+/* DNSSEC / security headers ticks, under Powered by */
+
+.site-checks-line {
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.site-checks-line a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--fg-dim);
+    text-decoration: none;
+    transition: color 150ms ease;
+}
+
+.site-checks-line a:hover {
+    color: var(--fg);
+    text-decoration: underline;
+}
+
+.site-check-icon {
+    width: 14px;
+    height: 14px;
+    stroke-width: 3;
+}
+
+.site-check-ok {
+    color: #6fd07c;
+}
+
+.site-check-fail {
+    color: #e5484d;
+}
+
 .version-line {
     margin-top: 6px;
     opacity: 0.8;

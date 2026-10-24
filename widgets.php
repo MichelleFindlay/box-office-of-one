@@ -16,6 +16,8 @@ if (function_exists('set_time_limit')) {
 
 require __DIR__ . '/lib/App.php';
 
+SecurityHeaders::send(false);
+
 $config = App::loadConfig();
 if (App::needsSetup($config)) {
     http_response_code(500);

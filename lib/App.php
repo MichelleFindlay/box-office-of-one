@@ -9,6 +9,8 @@ require_once __DIR__ . '/Awards.php';
 require_once __DIR__ . '/Streaming.php';
 require_once __DIR__ . '/TmdbDetails.php';
 require_once __DIR__ . '/Soundtracks.php';
+require_once __DIR__ . '/SecurityHeaders.php';
+require_once __DIR__ . '/SiteChecks.php';
 require_once __DIR__ . '/Widgets.php';
 require_once __DIR__ . '/WidgetCache.php';
 require_once __DIR__ . '/WidgetRegistry.php';
@@ -63,6 +65,7 @@ class App
     public Streaming $streaming;
     public TmdbDetails $tmdbDetails;
     public Soundtracks $soundtracks;
+    public SiteChecks $siteChecks;
     public Widgets $widgets;
     public DateTimeZone $tz;
 
@@ -79,6 +82,7 @@ class App
         $this->streaming = new Streaming($config, $this->tz);
         $this->tmdbDetails = new TmdbDetails($config, $this->streaming->regionCode());
         $this->soundtracks = new Soundtracks();
+        $this->siteChecks = new SiteChecks();
         $this->widgets = new Widgets($this->trakt, $this->library, $this->posters, $this->ratings, $this->awards,
             $this->streaming, $this->tmdbDetails, $this->soundtracks, $config);
     }

@@ -348,6 +348,35 @@ as `tmdb_api_key`. `cron.php` then fills in missing posters a batch at a
 time (`poster_backfill_per_run`), heaviest-watched titles first. Without
 either, art-less titles just get a letter placeholder.
 
+## Security headers
+
+Every page and endpoint sends a full set of security headers (see
+`lib/SecurityHeaders.php`): a strict Content-Security-Policy,
+Strict-Transport-Security, X-Frame-Options, X-Content-Type-Options,
+Referrer-Policy, Permissions-Policy and Cross-Origin-Opener-Policy, and
+`X-Powered-By` is removed. They're sent from PHP, so they work on any web
+server without extra configuration.
+
+The Content-Security-Policy allows no inline scripts or styles at all.
+`index.php` passes its data to `assets/app.js` as a JSON block, and marks
+up initial state as attributes (`hidden`, `data-width`) that `app.js`
+applies. Images may only come from this server, Trakt and TMDB, and frames
+only from YouTube's privacy-enhanced player (for trailers). If you change
+the page, keep to those rules, or the browser will block the change. Its
+console says what was refused.
+
+The footer shows a ✓ (or ✗) beside **Security headers** and **DNSSEC**,
+linking to securityheaders.com and Verisign's DNSSEC Debugger. Once a day,
+`cron.php` fetches the site's own page from outside and checks for
+everything an A+ needs: all six headers, and a Content-Security-Policy
+without `'unsafe-inline'` or `'unsafe-eval'`. It also asks a public DNS
+resolver whether your domain validates with DNSSEC. Hover a ✗ to see
+what failed. The row is hidden when the site is visited at localhost or an
+IP address.
+
+If your host or CDN adds security headers of its own, turn those off for
+this site so the two sets don't clash.
+
 ## MCP server (optional)
 
 `mcp.php` exposes your Trakt data as tools an MCP-compatible AI client can
