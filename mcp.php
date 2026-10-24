@@ -31,6 +31,9 @@ if (function_exists('set_time_limit')) {
 }
 
 require __DIR__ . '/lib/Mcp.php';
+require_once __DIR__ . '/lib/SecurityHeaders.php';
+
+SecurityHeaders::send(false);
 
 header('Content-Type: application/json');
 

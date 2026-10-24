@@ -17,7 +17,8 @@
  *      from Wikidata (unless awards_backfill_per_run is 0). Re-checks where
  *      your watchlist and history are streaming, for Streaming Changes
  *      (only with tmdb_api_key set).
- *   5. Recomputes every widget and every period of every panel.
+ *   5. Recomputes every widget and every period of every panel, and
+ *      (once a day) re-checks the footer's DNSSEC and security headers.
  *
  * Run this every 15 minutes, matching the widget cache TTL. Two ways to
  * schedule it (crontab syntax: minute 0,15,30,45 of every hour — written
@@ -39,6 +40,8 @@ if (function_exists('set_time_limit')) {
 }
 
 require __DIR__ . '/lib/App.php';
+
+SecurityHeaders::send(false);
 
 $isCli = PHP_SAPI === 'cli';
 
@@ -122,6 +125,7 @@ foreach (Trakt::UI_PERIODS as $period) {
 }
 
 $step('lifetime_stats', fn() => $app->lifetimeStats());
+$step('site_checks', fn() => $app->siteChecks->refreshIfDue());
 
 $summary = sprintf(
     '[%s] box-office-of-one cron: refreshed %d/%d (%s)',

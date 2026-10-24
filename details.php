@@ -15,6 +15,8 @@ header('Content-Type: application/json');
 
 require __DIR__ . '/lib/App.php';
 
+SecurityHeaders::send(false);
+
 $config = App::loadConfig();
 if (App::needsSetup($config)) {
     http_response_code(500);
