@@ -353,23 +353,34 @@ either, art-less titles just get a letter placeholder.
 Every page and endpoint sends a full set of security headers (see
 `lib/SecurityHeaders.php`): a strict Content-Security-Policy,
 Strict-Transport-Security, X-Frame-Options, X-Content-Type-Options,
-Referrer-Policy, Permissions-Policy and Cross-Origin-Opener-Policy, and
-`X-Powered-By` is removed. They're sent from PHP, so they work on any web
+Referrer-Policy, Permissions-Policy and the three Cross-Origin policies
+(Opener, Embedder and Resource), and `X-Powered-By` is removed. They're sent from PHP, so they work on any web
 server without extra configuration.
 
 The Content-Security-Policy allows no inline scripts or styles at all.
 `index.php` passes its data to `assets/app.js` as a JSON block, and marks
 up initial state as attributes (`hidden`, `data-width`) that `app.js`
 applies. Images may only come from this server, Trakt and TMDB, and frames
-only from YouTube's privacy-enhanced player (for trailers). If you change
+only from YouTube's privacy-enhanced player (for trailers).
+
+Cross-Origin-Embedder-Policy is `credentialless` on pages rather than the
+stricter `require-corp`, because Trakt's and TMDB's image servers don't
+send the headers `require-corp` needs, and every poster would be blocked.
+Images from other sites still load, just without cookies. YouTube's
+player only loads under this policy as a "credentialless" frame, which
+Chrome and Edge support. Firefox enforces the policy but doesn't support
+that kind of frame, so there the Trailer button opens YouTube in a new
+tab instead of playing on the page. Safari doesn't enforce
+`credentialless`, so trailers play on the page as usual. If you change
 the page, keep to those rules, or the browser will block the change. Its
 console says what was refused.
 
 The footer shows a ✓ (or ✗) beside **Security headers** and **DNSSEC**,
 linking to securityheaders.com and Verisign's DNSSEC Debugger. Once a day,
 `cron.php` fetches the site's own page from outside and checks for
-everything an A+ needs: all six headers, and a Content-Security-Policy
-without `'unsafe-inline'` or `'unsafe-eval'`. It also asks a public DNS
+everything an A+ needs (all six headers, and a Content-Security-Policy
+without `'unsafe-inline'` or `'unsafe-eval'`), plus the three
+Cross-Origin headers. It also asks a public DNS
 resolver whether your domain validates with DNSSEC. Hover a ✗ to see
 what failed. The row is hidden when the site is visited at localhost or an
 IP address.

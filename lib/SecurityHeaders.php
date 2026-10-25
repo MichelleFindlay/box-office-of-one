@@ -71,5 +71,12 @@ class SecurityHeaders
         header('Referrer-Policy: strict-origin-when-cross-origin');
         header('Permissions-Policy: ' . implode(', ', self::PERMISSIONS));
         header('Cross-Origin-Opener-Policy: same-origin');
+        // Pages: "credentialless" rather than "require-corp", since Trakt's
+        // and TMDB's image servers send no CORP or CORS headers and every
+        // poster would be blocked. Cross-origin images still load, just
+        // without cookies, which they never needed. Data loads nothing.
+        header('Cross-Origin-Embedder-Policy: ' . ($page ? 'credentialless' : 'require-corp'));
+        // Nothing here is meant to be loaded by another site.
+        header('Cross-Origin-Resource-Policy: same-origin');
     }
 }
