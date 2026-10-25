@@ -12,8 +12,9 @@ require_once __DIR__ . '/Http.php';
  *   answer means the signatures checked out all the way down.
  * - Security headers: fetches the site's own page from outside, as a
  *   visitor would (so through any CDN in front of it), and checks for
- *   what securityheaders.com needs for an A+: all six headers, and a
- *   Content-Security-Policy without 'unsafe-inline' or 'unsafe-eval'.
+ *   what securityheaders.com needs for an A+ — all six headers, and a
+ *   Content-Security-Policy without 'unsafe-inline' or 'unsafe-eval' —
+ *   plus the three Cross-Origin-* headers it lists as upcoming.
  *   securityheaders.com itself doesn't answer automated requests, so the
  *   footer links there to see the real grade.
  *
@@ -31,6 +32,9 @@ class SiteChecks
     private const REQUIRED = [
         'content-security-policy', 'strict-transport-security', 'x-frame-options',
         'x-content-type-options', 'referrer-policy', 'permissions-policy',
+        // securityheaders.com's "upcoming" headers — not graded (yet),
+        // but sent, so a CDN stripping them should show too.
+        'cross-origin-embedder-policy', 'cross-origin-opener-policy', 'cross-origin-resource-policy',
     ];
 
     private string $file;

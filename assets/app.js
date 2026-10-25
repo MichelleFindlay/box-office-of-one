@@ -555,10 +555,20 @@
 
     // Plays a YouTube trailer in the modal, so it can be watched without
     // leaving the page. Uses YouTube's privacy-enhanced (no-cookie) player.
+    //
+    // The page sends Cross-Origin-Embedder-Policy (lib/SecurityHeaders.php),
+    // which only lets YouTube's player in as a "credentialless" frame —
+    // supported by Chrome and Edge (Safari doesn't enforce the policy at
+    // all). Where the policy is enforced but the attribute isn't (Firefox),
+    // the frame would just be blocked, so return false and let the link
+    // open the trailer on YouTube instead.
     function openTrailer(videoId, title) {
         if (!modalBody) return false;
+        var credentialless = "credentialless" in HTMLIFrameElement.prototype;
+        if (window.crossOriginIsolated && !credentialless) return false;
         modalBody.innerHTML = "";
         var frame = document.createElement("iframe");
+        if (credentialless) frame.credentialless = true;
         frame.className = "trailer-frame";
         frame.src = "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(videoId) + "?autoplay=1&rel=0";
         frame.title = (title ? title + " — " : "") + "Trailer";
