@@ -412,8 +412,18 @@ class Trakt
     public function getStats(): ?array
     {
         $data = $this->call('/users/' . $this->userSlug() . '/stats', [], 900);
+        if (!is_array($data)) {
+            return null;
+        }
 
-        return is_array($data) ? $data : null;
+        // Trakt sometimes answers 200 with every counter zeroed even though
+        // the history is intact. Treat that as unavailable so callers fall
+        // back to the local snapshot instead of showing zeros.
+        $plays = (int) ($data['total_plays'] ?? 0)
+            + (int) ($data['movies']['plays'] ?? 0)
+            + (int) ($data['episodes']['plays'] ?? 0);
+
+        return $plays > 0 ? $data : null;
     }
 
     /**
